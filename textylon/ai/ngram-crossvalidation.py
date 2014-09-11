@@ -67,8 +67,9 @@ import pylab as pl
 
 
 # matplotlib.use('Agg')
-DATA_FOLDER = "/home/af/Downloads/rt-polaritydata/rt-polaritydata/data"
-# DATA_FOLDER = "/home/af/Downloads/review_polarity/data"
+#DATA_FOLDER = "/home/af/Downloads/20news-18828"
+#DATA_FOLDER = "/home/af/Downloads/review_polarity/txt_sentoken"
+DATA_FOLDER = '/home/af/Downloads/GeoText.2010-10-12/processed_data/meanminmax/10_clustered'
 K_FOLD = 10
 data_target = load_files(DATA_FOLDER, encoding='latin1')
 DO_PCA = False
@@ -96,7 +97,8 @@ target = data_target.target
 
 print("Extracting features from all the dataset using a sparse vectorizer")
 t0 = time()
-vectorizer = TfidfVectorizer(use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=2, max_df=1.0, ngram_range=(1, 2))
+vectorizer = TfidfVectorizer(use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=2, max_df=1.0, ngram_range=(1, 1))
+
 # vectorizer = CountVectorizer(min_df=2, max_df=1.0, ngram_range=(1, 4))
 # the output of the fit_transform (x_train) is a sparse csc matrix.
 data = vectorizer.fit_transform(data_target.data)
@@ -174,7 +176,7 @@ for clf, name in (
     print(name)
     results.append(benchmark(clf))
 
-for penalty in ["l2", "l1"]:
+for penalty in ["l2"]:
     print('=' * 80)
     print("%s penalty" % penalty.upper())
     # Train Liblinear model

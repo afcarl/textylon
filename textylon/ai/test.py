@@ -21,9 +21,9 @@ from time import time
 
 import numpy as np
 import pylab as pl
-from stavicta.util.dsm import *
-from stavicta.util.dsm_classes import Matrix, Vocabulary
-from stavicta.vectorizer.dsmvectorizer import DSMVectorizer
+from textylon.util.dsm import *
+from textylon.util.dsm_classes import Matrix, Vocabulary
+from textylon.vectorizer.dsmvectorizer import DSMVectorizer
 
 
 DATA_FOLDER = "/home/af/Downloads/review_polarity/txt_sentoken"

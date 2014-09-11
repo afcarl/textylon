@@ -9,10 +9,10 @@ import shutil
 import unittest
 import urllib2
 
-from com.textylon.dataprovider.simplecorpusdataprovider import SimpleCorpusDataProvider
-from com.textylon.normalizer.lowercasenormalizer import LowerCaseNormalizer
-from com.textylon.tokenizer.simpletokenizer import SimpleTokenizer
-from com.textylon.vectorizer.standardwordspace import StandartVectorizer
+from textylon.dataprovider.dataproviders import SimpleCorpusDataProvider
+from textylon.normalizer.normalizers import LowerCaseNormalizer
+from textylon.tokenizer.tokenizers import SimpleTokenizer
+from textylon.vectorizer.standardwordspace import StandartVectorizer
 
 
 logging.basicConfig(format='%(asctime)s %(module)s %(funcName)s %(message)s')
