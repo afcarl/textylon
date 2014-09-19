@@ -39,18 +39,33 @@ import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
 import  matplotlib.collections as collections
 import matplotlib.ticker as ticker
+import pylab as pb
+pb.ion()
+from GPy.core.gp import GP
+import csv
+from GPy.examples import regression
 
+
+import numpy as np
+import GPy
+from GPy import kern, likelihoods
+#from GPy.models_modules.gp_regression import GPRegression
+import codecs
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.neighbors import NearestNeighbors
 from numpy import float16, float32
 from scipy.sparse import csr_matrix
+import sys
 from scipy import mean
 
 
 home = '/home/af/Downloads/GeoText.2010-10-12'
+home = '/home/arahimi/geolocation/'
 users_home = path.join(home, 'processed_data')
 testfile = path.join(users_home, 'user_info.test')
 devfile = path.join(users_home, 'user_info.dev')
 trainfile = path.join(users_home, 'user_info.train')
+userTextDirectory =  path.join(home, 'userText')
 records = []
 lngs = []
 ltts = []
@@ -68,46 +83,50 @@ classLatMedian = {}
 classLonMedian = {}
 classLatMean = {}
 classLonMean = {}
+userText = {}
 
-with codecs.open(path.join(home, 'full_text.txt'), 'r', 'latin') as inf:
-    i = 0
-    j = 0
-    for line in inf:
-        i += 1
-        fs = line.split('\t')
-        if len(fs)!=6:
-            j += 1
-            #print 'format error: ' + line + str(j)
-            continue
-        user = fs[0]
-        ttime = fs[1]
-        badloc = fs[2]
-        latitude = fs[3].strip()
-        longitude = fs[4].strip()
-        #print longitude, latitude, badloc
-        #if latitude > -75 or latitude<-125:
-        #    continue
-        #    pass
-        #if longitude < 25 or longitude>50:
-        #    continue
-        #    pass
-        lngs.append(longitude)
-        ltts.append(latitude)
-        text = fs[5]
-        #print time
-        #time = datetime.strptime(time,'%Y-%m-%dT%H:%M:%S')
-        #if user in userFirstTime:
-        #    if time < userFirstTime[user]:
-        #        userFirstTime[user] = time
-        #        userLocation[user] = str(latitude).strip()+','+str(longitude).strip()
-        #        userlon[user] = longitude
-        #        userlat[user] = latitude
-        #else:
-        #    userFirstTime[user] = time
-        #    userLocation[user] = str(latitude).strip()+','+str(longitude).strip()
-        #    userlon[user] = longitude
-        #    userlat[user] = latitude
-        records.append((user, ttime, badloc, longitude, latitude, text))
+def readRecords():
+    with codecs.open(path.join(home, 'full_text.txt'), 'r', 'latin') as inf:
+        i = 0
+        j = 0
+        for line in inf:
+            i += 1
+            fs = line.split('\t')
+            if len(fs)!=6:
+                j += 1
+                #print 'format error: ' + line + str(j)
+                continue
+            user = fs[0]
+            ttime = fs[1]
+            badloc = fs[2]
+            latitude = fs[3].strip()
+            longitude = fs[4].strip()
+            #print longitude, latitude, badloc
+            #if latitude > -75 or latitude<-125:
+            #    continue
+            #    pass
+            #if longitude < 25 or longitude>50:
+            #    continue
+            #    pass
+            lngs.append(longitude)
+            ltts.append(latitude)
+            text = fs[5].strip()
+            #print time
+            #time = datetime.strptime(time,'%Y-%m-%dT%H:%M:%S')
+            #if user in userFirstTime:
+            #    if time < userFirstTime[user]:
+            #        userFirstTime[user] = time
+            #        userLocation[user] = str(latitude).strip()+','+str(longitude).strip()
+            #        userlon[user] = longitude
+            #        userlat[user] = latitude
+            #else:
+            #    userFirstTime[user] = time
+            #    userLocation[user] = str(latitude).strip()+','+str(longitude).strip()
+            #    userlon[user] = longitude
+            #    userlat[user] = latitude
+            records.append((user, ttime, badloc, latitude, longitude , text))
+    return records
+
 
 def median(mylist):
     sorts = sorted(mylist)
@@ -143,8 +162,6 @@ def users(file, type='train'):
             lat = str(float(fields[1])).strip()
             lon = str(float(fields[2])).strip()
             locStr = lat+','+lon
-            if locStr == '32.975011,-117.070360':
-                print line
             userLocation[user] = locStr
             if type=='train':
                 trainUsers[user] = locStr
@@ -153,11 +170,11 @@ def users(file, type='train'):
             elif type == 'dev':
                 devUsers[user] = locStr
     
-print 'reading train, dev and test file'
-users(trainfile, 'train')
-users(devfile, 'dev')
-users(testfile, 'test')
-print 'total ' + str(len(userLocation)).strip() + " users."            
+#print 'reading train, dev and test file'
+#users(trainfile, 'train')
+#users(devfile, 'dev')
+#users(testfile, 'test')
+#print 'total ' + str(len(userLocation)).strip() + " users."            
 def fillUserByLocation():
     print 'users indexed by location'
     #fill userLocations dictioanry if there are multiple users for a location they are separated by space
@@ -170,36 +187,20 @@ def fillUserByLocation():
         else:
             locationUser[loc] = user
     print "the number of users/distinct locations is " + str(len(locationUser))
-fillUserByLocation()
-'''
-for record in records:
-    user, time, badloc, longitude, latitude, text = record
-    pointKey = str(int(round(longitude))).strip()+'-'+str(int(round(latitude))).strip()
-    keys.append(pointKey)
-    if pointKey in pointText:
-        #pointText[pointKey] = pointText[pointKey] + ' ' + text
-        pass
-    else:
-        pointText[pointKey] = text
-print len(pointText), len(records)
-'''
-        
-groupbyusersText = True
-writeUserTexts = False
-userTextDirectory = '/home/af/Downloads/GeoText.2010-10-12/userText'
-userText = {}
-#userPoints = {}
-if groupbyusersText:
-    for record in records:
-        user, ttime, badloc, longitude, latitude, text = record
-        if user in userText:
-            userText[user] = userText[user] + '\n' + text
-        else:
-            userText[user] = text
-    if writeUserTexts:
-        for user in userText:
-            with codecs.open(path.join(userTextDirectory, user), 'w', 'latin') as outf:
-                outf.write(userText[user])
+#fillUserByLocation()
+
+
+def fillTextByUser(writeUserTexts=False):
+        for record in records:
+            user, ttime, badloc, latitude, longitude, text = record
+            if user in userText:
+                userText[user] = userText[user] + '\n' + text
+            else:
+                userText[user] = text
+        if writeUserTexts:
+            for user in userText:
+                with codecs.open(path.join(userTextDirectory, user), 'w', 'latin') as outf:
+                    outf.write(userText[user])
 
 
 
@@ -498,7 +499,7 @@ def createTrainDir():
                 with codecs.open(path.join(class_dir, user), 'w', 'latin') as inf:
                     inf.write(userText[user])
     print "train directories created and class median and mean lat,lon computed. trainfile: " + filename
-createTrainDir()
+#createTrainDir()
 def createTestDevDir(type='test'):
     print 'creating ' + type + ' collection.'
     t_home = path.join(users_home, type+'/'+type)
@@ -517,8 +518,8 @@ def createTestDevDir(type='test'):
         text = userText[user]
         with codecs.open(path.join(t_home, user), 'w', 'latin') as inf:
             inf.write(text)
-createTestDevDir('test')
-createTestDevDir('dev')
+#createTestDevDir('test')
+#createTestDevDir('dev')
 
 def size_mb(docs):
     return sum(len(s.encode('latin')) for s in docs) / 1e6
@@ -622,4 +623,194 @@ def classify():
     averageMedianDistance = sumMedianDistance / float(len(pred))
     print "Average mean distance is " + str(averageMeanDistance)
     print "Average median distance is " + str(averageMedianDistance)
-classify()
+#classify()
+
+def loadGPData(DO_SVD=True, Reduction_D=100):
+    data = {}
+    
+    trainlats = []
+    trainlongs = []
+    traintexts = []
+    trainlocs = []
+    
+    testlats = []
+    testlongs = []
+    testtexts = []
+    testlocs = []
+    
+    for user in trainUsers:
+        loc = trainUsers[user]
+        latlon = loc.split(',')
+        lat = float(latlon[0])
+        lon = float(latlon[1])
+        text = userText[user]
+        trainlats.append(lat)
+        trainlongs.append(lon)
+        traintexts.append(text)
+        trainlocs.append([lat, lon])
+
+    for user in testUsers:
+        loc = testUsers[user]
+        latlon = loc.split(',')
+        lat = float(latlon[0])
+        lon = float(latlon[1])
+        text = userText[user]
+        testlats.append(lat)
+        testlongs.append(lon)
+        testtexts.append(text)
+        testlocs.append([lat, lon])
+
+    
+    vectorizer = TfidfVectorizer(use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=10, max_df=50000, ngram_range=(1, 1), stop_words='english')
+    
+    print 'vectorizing train and test data...'
+    X_train = vectorizer.fit_transform(traintexts)
+    print("X_train: n_samples: %d, n_features: %d" % X_train.shape)
+    X_test = vectorizer.transform(testtexts)
+    print("X_test: n_samples: %d, n_features: %d" % X_test.shape)
+    
+    if DO_SVD:
+        print("dimension reduction svd with d=%d" % Reduction_D)
+        svd = TruncatedSVD(n_components=Reduction_D, algorithm="randomized", n_iterations=5, random_state=None, tol=0)
+        X_train = svd.fit_transform(X_train)
+        X_test = svd.transform(X_test)
+        print("dimension reduction finished.")
+        
+    Y_train = np.asanyarray(trainlocs)
+    print("Y_train: n_samples: %d, n_features: %d" % Y_train.shape)
+    Y_test = np.asanyarray(testlocs) 
+    print("Y_test: n_samples: %d, n_features: %d" % Y_test.shape)
+    '''
+    if X_train.issparse():
+        X_train = X_train.todense()
+    if X_test.issparse():
+        X_test = X_test.todense()
+    '''
+    data['Y'] = X_train
+    data['Ytest'] = X_test
+    data['X'] = Y_train
+    data['Xtest'] = Y_test
+    return data
+        
+    
+    
+def localizeGP(max_iters=100, kernel=None, optimize=True, plot=False):
+    """Predict the location of a robot given wirelss signal strength readings."""
+    data = loadGPData()
+    #data = GPy.util.datasets.robot_wireless()
+    print data
+    # create simple GP Model
+    m = GPy.models.GPRegression(data['Y'], data['X'], kernel=kernel)
+
+    # optimize
+    if optimize:
+        m.optimize(messages=True, max_iters=max_iters)
+
+    Xpredict = m.predict(data['Ytest'])[0]
+    if plot:
+        pb.plot(data['Xtest'][:, 0], data['Xtest'][:, 1], 'r-')
+        pb.plot(Xpredict[:, 0], Xpredict[:, 1], 'b-')
+        pb.axis('equal')
+        pb.title('WiFi Localization with Gaussian Processes')
+        pb.legend(('True Location', 'Predicted Location'))
+        
+    sumDist = 0
+    for i in range(0, Xpredict.shape[0]):
+        lat1 = Xpredict[i][0]
+        lon1 = Xpredict[i][1]
+        lat2 = data['Xtest'][i][0]
+        lon2 = data['Xtest'][i][1]
+        sumDist += distance(lat1, lon1, lat2, lon2)
+    averageDist = float(sumDist) / Xpredict.shape[0]
+    print "average distance is: " + str(averageDist)
+    #sse = ((data['Xtest'] - Xpredict)**2).sum()
+    #aae = np.absolute(data['Xtest'] - Xpredict).sum()
+    print m
+    #print('Sum of squares error on test data: ' + str(sse))
+    #print('average absolute error on test data: ' + str(aae))
+    if plot:
+        fig = pb.figure(None)
+        pb.title('')
+        raw_input()
+    return m
+def wireless(max_iters=100, kernel=None, optimize=True, plot=True):
+    """Predict the location of a robot given wirelss signal strength readings."""
+    #data = loadGPData()
+    data = GPy.util.datasets.robot_wireless()
+    print data
+    # create simple GP Model
+    m = GPy.models.GPRegression(data['Y'], data['X'], kernel=kernel, normalize_X=True, normalize_Y=True)
+
+    # optimize
+    if optimize:
+        m.optimize(messages=True, max_iters=max_iters)
+
+    Xpredict = m.predict(data['Ytest'])[0]
+    if plot:
+        pb.plot(data['Xtest'][:, 0], data['Xtest'][:, 1], 'r-')
+        pb.plot(Xpredict[:, 0], Xpredict[:, 1], 'b-')
+        pb.axis('equal')
+        pb.title('WiFi Localization with Gaussian Processes')
+        pb.legend(('True Location', 'Predicted Location'))
+        
+
+    #sse = ((data['Xtest'] - Xpredict)**2).sum()
+    aae = np.absolute(data['Xtest'] - Xpredict).sum()
+    print m
+    #print('Sum of squares error on test data: ' + str(sse))
+    print('average absolute error on test data: ' + str(aae))
+    if plot:
+        fig = pb.figure(None)
+        pb.title('')
+        raw_input()
+    return m
+
+def wirelessSGD(max_iters=100, kernel=None, optimize=True, plot=True):
+    """Predict the location of a robot given wirelss signal strength readings."""
+    data = loadGPData()
+    #data = GPy.util.datasets.robot_wireless()
+    print data
+    # create simple GP Model
+    m = GPy.models.GPMultioutputRegression(data['Y'], data['X'],  normalize_X=True, normalize_Y=True)
+
+    # optimize
+    if optimize:
+        m.optimize(messages=True, max_iters=max_iters)
+
+    Xpredict = m.predict(data['Ytest'])[0]
+    if plot:
+        pb.plot(data['Xtest'][:, 0], data['Xtest'][:, 1], 'r-')
+        pb.plot(Xpredict[:, 0], Xpredict[:, 1], 'b-')
+        pb.axis('equal')
+        pb.title('WiFi Localization with Gaussian Processes')
+        pb.legend(('True Location', 'Predicted Location'))
+        
+
+    #sse = ((data['Xtest'] - Xpredict)**2).sum()
+    aae = np.absolute(data['Xtest'] - Xpredict).sum()
+    print m
+    #print('Sum of squares error on test data: ' + str(sse))
+    print('average absolute error on test data: ' + str(aae))
+    if plot:
+        fig = pb.figure(None)
+        pb.title('')
+        raw_input()
+    return m
+def finalUserTextFile():
+    fname = path.join(home, 'loctext.txt')
+    with codecs.open(fname, 'w', 'latin1') as inf:
+        pass
+        #TODO
+wireless()
+readRecords()
+print 'reading train, dev and test file'
+users(trainfile, 'train')
+users(devfile, 'dev')
+users(testfile, 'test')
+print 'total ' + str(len(userLocation)).strip() + " users."
+#fillUserByLocation()
+fillTextByUser()            
+
+#loatGeolocationDataset()
+localizeGP()
+#wirelessSGD()

@@ -1,8 +1,13 @@
 import codecs
 from collections import Counter
 import re
-
-option = 5
+import os
+import urllib2
+import nltk
+from bs4 import BeautifulSoup
+from goose import Goose
+home = '/home/af/Downloads/alta/'
+option = 8
 
 if option==1:
     with codecs.open('train.txt', 'r', 'utf-8') as inf:
@@ -138,3 +143,53 @@ Created on 10 Sep 2014
 
 @author: af
 '''
+if option==6:
+    ifname='Train_Data_2.txt'
+    ofname='links.txt'
+    ifname = os.path.join(home, ifname)
+    ofname = os.path.join(home, ofname)
+    with codecs.open(ofname, 'w', 'utf8') as outf:
+        with codecs.open(ifname, 'r', 'utf-8') as inf:
+            for s in inf:
+                t = s[s.find("http://"):]
+                t = t[:t.find(" ")].strip()
+                if t != '':
+                    outf.write(t+'\n')
+
+if option==7:
+    with codecs.open(os.path.join(home, 'trainlinks.txt'), 'r', 'utf-8') as inf:
+        with codecs.open(os.path.join(home, 'trainurltext.txt'), 'w', 'utf-8') as outf:
+            for url in inf:
+                bs = False
+                if bs:
+                    response = urllib2.urlopen('http://t.co/uRFq9gAZ')
+                    html = response.read()
+                    soup = BeautifulSoup(html) 
+                    print(soup.get_text())
+                gooose = True
+                if gooose:
+                    try:
+                        g = Goose()
+                        article = g.extract(url=url)
+                        text = article.cleaned_text
+                        outf.write(text +'\n')
+                    except:
+                        pass
+
+if option==8:
+    dic = []
+    with codecs.open(os.path.join(home, 'aunz.txt'), 'r', 'utf-8') as inf:
+        for line in inf:
+            #words = line.split()
+            #dic.extend(words)
+            dic.append(line.strip().lower())
+    dic = set(dic)
+    text = ''
+    with codecs.open(os.path.join(home, 'Test_Data.txt'), 'r', 'utf-8') as inf:
+        text = inf.read()
+    words = text.split()
+    i = 1
+    for word in words:
+        if word in dic:
+            print word
+            
