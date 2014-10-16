@@ -15,22 +15,24 @@ from math import radians, cos, sin, asin, sqrt
 from sklearn import cross_validation
 from sklearn import metrics
 from  sklearn.datasets import load_files
+from sklearn.preprocessing import normalize
 from sklearn.decomposition import PCA, TruncatedSVD, NMF, SparsePCA
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.feature_selection import SelectKBest, chi2
 from sklearn.linear_model import PassiveAggressiveClassifier
 from sklearn.linear_model import Perceptron
+from sklearn.datasets import dump_svmlight_file
 from sklearn.linear_model import RidgeClassifier
 from sklearn.linear_model import SGDClassifier
-#from sklearn.linear_model import LogisticRegression
+# from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import BernoulliNB, MultinomialNB
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neighbors import NearestCentroid
 from sklearn.svm import LinearSVC, SVC
 from sklearn.utils.extmath import density
 from sklearn.neighbors import NearestNeighbors
-#from time import time
+# from time import time
 from math import sqrt
 import numpy as np
 import matplotlib.pyplot as plt
@@ -38,7 +40,7 @@ from collections import Counter
 import random
 from os import path
 import math
-#from datetime import datetime
+# from datetime import datetime
 import glob
 import matplotlib.path as mpath
 import matplotlib.lines as mlines
@@ -47,6 +49,7 @@ import  matplotlib.collections as collections
 import matplotlib.ticker as ticker
 import pylab as pb
 from theano.tensor.basic import dmatrix
+from nltk.classify.naivebayes import NaiveBayesClassifier
 pb.ion()
 from GPy.core.gp import GP
 import csv
@@ -56,7 +59,7 @@ from sklearn.linear_model.sgd_fast import Log
 import numpy as np
 import GPy
 from GPy import kern, likelihoods
-#from GPy.models_modules.gp_regression import GPRegression
+# from GPy.models_modules.gp_regression import GPRegression
 import codecs
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.neighbors import NearestNeighbors
@@ -84,12 +87,12 @@ elif sys.argv[1] == 'server':
 
 
 
-#GEOTEXT_HOME = '/home/arahimi/Roller Dataset NA'
+# GEOTEXT_HOME = '/home/arahimi/Roller Dataset NA'
 users_home = path.join(GEOTEXT_HOME, 'processed_data')
 testfile = path.join(users_home, 'user_info.test')
 devfile = path.join(users_home, 'user_info.dev')
 trainfile = path.join(users_home, 'user_info.train')
-userTextDirectory =  path.join(GEOTEXT_HOME, 'userText')
+userTextDirectory = path.join(GEOTEXT_HOME, 'userText')
 records = []
 lngs = []
 ltts = []
@@ -111,7 +114,12 @@ userText = {}
 devClasses = {}
 testClasses = {}
 categories = []
+
 costMatrix = None
+trainCostMatrix = None
+testCostMarix = None
+devCostMatrix = None
+
 X_train = None
 X_dev = None
 X_test = None
@@ -123,27 +131,28 @@ U_dev = None
 U_test = None
 
 
-def readGeoTextRecords():
-    with codecs.open(path.join(GEOTEXT_HOME, 'full_text.txt'), 'r', 'latin') as inf:
+def readGeoTextRecords(encoding='utf-8'):
+    global records
+    with codecs.open(path.join(GEOTEXT_HOME, 'full_text.txt'), 'r', encoding=encoding) as inf:
         i = 0
         j = 0
         for line in inf:
             i += 1
             fs = line.split('\t')
-            if len(fs)!=6:
+            if len(fs) != 6:
                 j += 1
-                #print 'format error: ' + line + str(j)
+                # print 'format error: ' + line + str(j)
                 continue
             user = fs[0]
             ttime = fs[1]
             badloc = fs[2]
             latitude = fs[3].strip()
             longitude = fs[4].strip()
-            #print longitude, latitude, badloc
-            #if latitude > -75 or latitude<-125:
+            # print longitude, latitude, badloc
+            # if latitude > -75 or latitude<-125:
             #    continue
             #    pass
-            #if longitude < 25 or longitude>50:
+            # if longitude < 25 or longitude>50:
             #    continue
             #    pass
             lngs.append(longitude)
@@ -151,15 +160,15 @@ def readGeoTextRecords():
             text = fs[5].strip()
             
                 
-            #print time
-            #time = datetime.strptime(time,'%Y-%m-%dT%H:%M:%S')
-            #if user in userFirstTime:
+            # print time
+            # time = datetime.strptime(time,'%Y-%m-%dT%H:%M:%S')
+            # if user in userFirstTime:
             #    if time < userFirstTime[user]:
             #        userFirstTime[user] = time
             #        userLocation[user] = str(latitude).strip()+','+str(longitude).strip()
             #        userlon[user] = longitude
             #        userlat[user] = latitude
-            #else:
+            # else:
             #    userFirstTime[user] = time
             #    userLocation[user] = str(latitude).strip()+','+str(longitude).strip()
             #    userlon[user] = longitude
@@ -174,20 +183,20 @@ def readRollerRecords():
         for line in inf:
             i += 1
             fs = line.split('\t')
-            if len(fs)!=6:
+            if len(fs) != 6:
                 j += 1
-                #print 'format error: ' + line + str(j)
+                # print 'format error: ' + line + str(j)
                 continue
             user = fs[0]
             ttime = fs[1]
             badloc = fs[2]
             latitude = fs[3].strip()
             longitude = fs[4].strip()
-            #print longitude, latitude, badloc
-            #if latitude > -75 or latitude<-125:
+            # print longitude, latitude, badloc
+            # if latitude > -75 or latitude<-125:
             #    continue
             #    pass
-            #if longitude < 25 or longitude>50:
+            # if longitude < 25 or longitude>50:
             #    continue
             #    pass
             lngs.append(longitude)
@@ -195,15 +204,15 @@ def readRollerRecords():
             text = fs[5].strip()
             
                 
-            #print time
-            #time = datetime.strptime(time,'%Y-%m-%dT%H:%M:%S')
-            #if user in userFirstTime:
+            # print time
+            # time = datetime.strptime(time,'%Y-%m-%dT%H:%M:%S')
+            # if user in userFirstTime:
             #    if time < userFirstTime[user]:
             #        userFirstTime[user] = time
             #        userLocation[user] = str(latitude).strip()+','+str(longitude).strip()
             #        userlon[user] = longitude
             #        userlat[user] = latitude
-            #else:
+            # else:
             #    userFirstTime[user] = time
             #    userLocation[user] = str(latitude).strip()+','+str(longitude).strip()
             #    userlon[user] = longitude
@@ -229,50 +238,57 @@ def distance(lat1, lon1, lat2, lon2):
     # haversine formula 
     dlon = lon2 - lon1 
     dlat = lat2 - lat1 
-    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
     c = 2 * asin(sqrt(a)) 
 
     # 6367 km is the radius of the Earth
     km = 6367 * c
     return km 
 
-def users(file, type='train'):
-    with codecs.open(file, 'r', 'latin') as inf:
+def users(file, type='train', encoding='utf-8'):
+    global testUsers
+    global trainUsers
+    global devUsers
+    global userLocation
+    with codecs.open(file, 'r', encoding=encoding) as inf:
         for line in inf:
-            #print line
+            # print line
             fields = line.split()
             user = fields[0].strip()
             lat = str(float(fields[1])).strip()
             lon = str(float(fields[2])).strip()
-            locStr = lat+','+lon
+            locStr = lat + ',' + lon
             userLocation[user] = locStr
-            if type=='train':
+            if type == 'train':
                 trainUsers[user] = locStr
-            elif type =='test':
+            elif type == 'test':
                 testUsers[user] = locStr
             elif type == 'dev':
                 devUsers[user] = locStr
+    print "the number of train" + " users is " + str(len(trainUsers))
     
-#print 'reading train, dev and test file'
-#users(trainfile, 'train')
-#users(devfile, 'dev')
-#users(testfile, 'test')
-#print 'total ' + str(len(userLocation)).strip() + " users."            
+# print 'reading train, dev and test file'
+# users(trainfile, 'train')
+# users(devfile, 'dev')
+# users(testfile, 'test')
+# print 'total ' + str(len(userLocation)).strip() + " users."            
 def fillUserByLocation():
+    global locationUser
     print 'users indexed by location'
-    #fill userLocations dictioanry if there are multiple users for a location they are separated by space
+    # fill userLocations dictioanry if there are multiple users for a location they are separated by space
     for user in userLocation:
         loc = userLocation[user]
         if loc in locationUser:
-            #print "Warning: we have multiple users with exactly the same location!"
+            # print "Warning: we have multiple users with exactly the same location!"
             locationUser[loc] = locationUser[loc] + " " + user
         else:
             locationUser[loc] = user
     print "the number of users/distinct locations is " + str(len(locationUser))
-#fillUserByLocation()
+# fillUserByLocation()
 
 
-def fillTextByUser(writeUserTexts=False):
+def fillTextByUser(writeUserTexts=False, encoding='utf-8'):
+        global userText
         for record in records:
             user, ttime, badloc, latitude, longitude, text = record
             if user in userText:
@@ -281,7 +297,7 @@ def fillTextByUser(writeUserTexts=False):
                 userText[user] = text
         if writeUserTexts:
             for user in userText:
-                with codecs.open(path.join(userTextDirectory, user), 'w', 'latin') as outf:
+                with codecs.open(path.join(userTextDirectory, user), 'w', encoding=encoding) as outf:
                     outf.write(userText[user])
 
 
@@ -292,7 +308,7 @@ def textSimilarity():
     NeighborDirectory = GEOTEXT_HOME
     # matplotlib.use('Agg')
     DATA_FOLDER = userTextDirectory
-    #DATA_FOLDER = "/GEOTEXT_HOME/af/Downloads/review_polarity/txt_sentoken"
+    # DATA_FOLDER = "/GEOTEXT_HOME/af/Downloads/review_polarity/txt_sentoken"
     K_FOLD = 10
     data_target = load_files(DATA_FOLDER, encoding='latin')
     filenames = data_target.filenames
@@ -360,33 +376,33 @@ def textSimilarity():
         print("Extracting best features by a chi-squared test")
         ch2NumFeatures = 1000 
         ch2 = SelectKBest(chi2, k=ch2NumFeatures)
-        #print vectorizer.get_stop_words()
+        # print vectorizer.get_stop_words()
         data = ch2.fit_transform(data, target)
-        #print data
+        # print data
 
     
     KNN = 10
     nn = NearestNeighbors(n_neighbors=KNN + 1, algorithm='ball_tree').fit(data)
-    #query and data are the same so every node is counted as its most similar here
+    # query and data are the same so every node is counted as its most similar here
     distances, indices = nn.kneighbors(data)
     with codecs.open(path.join(NeighborDirectory, 'neighbors.txt'), 'w', 'latin') as outf:
         nodeIndex = -1
         nodeNeighbors = []
         for neighbors in indices:
             nodeIndex += 1
-            outf.write(path.basename(filenames[nodeIndex])+' ')
+            outf.write(path.basename(filenames[nodeIndex]) + ' ')
             for neighbor in neighbors:
                 if neighbor == nodeIndex:
                     continue
                 else:
-                    outf.write(path.basename(filenames[neighbor])+' ')
+                    outf.write(path.basename(filenames[neighbor]) + ' ')
             outf.write('\n')
         
 def plot_points():
     
-    #N = 50
-    #x = np.random.rand(N)
-    #y = np.random.rand(N)
+    # N = 50
+    # x = np.random.rand(N)
+    # y = np.random.rand(N)
     x = []
     y = []
     for user in userLocation:
@@ -396,33 +412,33 @@ def plot_points():
         x.append(userlon[user])
     colors = np.random.rand(15)
     
-    area = 1 # 0 to 15 point radiuses
+    area = 1  # 0 to 15 point radiuses
     
     plt.scatter(x, y, s=area, c=colors, alpha=0.5)
     plt.show()
 
             
 def merge_text():
-    files = glob.glob(userTextDirectory+'/userText/*')
+    files = glob.glob(userTextDirectory + '/userText/*')
     texts = {}
     for file in files:
         with codecs.open(file, 'r', 'latin') as inf:
             t = ''
             for line in inf:
-                t = t +' '+ line.strip()
+                t = t + ' ' + line.strip()
             texts[path.basename(file)] = t
     with codecs.open(path.join(userTextDirectory, 'linie.txt'), 'w', 'latin') as outf:
         for t in texts:
-            outf.write( t + ' ||| ' + texts[t] + '\n')
+            outf.write(t + ' ||| ' + texts[t] + '\n')
         
-#merge_text()
+# merge_text()
 
 
 
 def partitionLocView(granularity=10):
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    filename = '/home/af/Downloads/GeoText.2010-10-12/processed_data/'+str(granularity).strip()+'_clustered.train'
+    filename = '/home/af/Downloads/GeoText.2010-10-12/processed_data/' + str(granularity).strip() + '_clustered.train'
     allpoints = []
     allpointsMinLat = []
     allpointsMaxLat = []
@@ -456,7 +472,7 @@ def partitionLocView(granularity=10):
             allpointsMinLon.append(minlon)
             allpoints.append(points)
     x = []
-    y= []
+    y = []
     for i in range(0, len(allpointsMaxLat)):
         y.append(allpointsMinLat[i])
         y.append(allpointsMinLat[i])
@@ -470,33 +486,33 @@ def partitionLocView(granularity=10):
         
         rect = mpatches.Rectangle((allpointsMinLon[i], allpointsMinLat[i]), allpointsMaxLon[i] - allpointsMinLon[i], allpointsMaxLat[i] - allpointsMinLat[i], facecolor='white')
         ax.add_artist(rect)
-        ax.set_xlim([-125, -60]) #pylab.xlim([-400, 400])
+        ax.set_xlim([-125, -60])  # pylab.xlim([-400, 400])
         ax.set_ylim([25, 50])
          
-    #colors = np.random.rand(15)
+    # colors = np.random.rand(15)
     
-    #area = 1 # 0 to 15 point radiuses
+    # area = 1 # 0 to 15 point radiuses
     
-    #plt.scatter(x, y, s=area, c=colors, alpha=0.5)
-    #ax.set_xlim([-400, -380]) #pylab.xlim([-400, 400])
-    #ax.set_ylim([-400, -380]) #pylab.ylim([-400, 400])
-    #patches = []
-    #polygon = plt.Rectangle((-400, -400), 10, 10, color='yellow') #Rectangle((-400, -400), 10, 10, color='y')
-    #patches.append(polygon)
+    # plt.scatter(x, y, s=area, c=colors, alpha=0.5)
+    # ax.set_xlim([-400, -380]) #pylab.xlim([-400, 400])
+    # ax.set_ylim([-400, -380]) #pylab.ylim([-400, 400])
+    # patches = []
+    # polygon = plt.Rectangle((-400, -400), 10, 10, color='yellow') #Rectangle((-400, -400), 10, 10, color='y')
+    # patches.append(polygon)
     
-    #pol2 = plt.Rectangle((-390, -390), 10, 10, facecolor='yellow', edgecolor='violet', linewidth=2.0)
-    #ax.add_artist(pol2)
+    # pol2 = plt.Rectangle((-390, -390), 10, 10, facecolor='yellow', edgecolor='violet', linewidth=2.0)
+    # ax.add_artist(pol2)
     
     
-    #p = collections.PatchCollection(patches) #, cmap=matplotlib.cm.jet)
-    #ax.add_collection(p)
-    #ax.xaxis.set_major_locator(ticker.MultipleLocator(20)) # (MultipleLocator(20)) 
-    #ax.yaxis.set_major_locator(ticker.MultipleLocator(20)) # (MultipleLocator(20)) 
+    # p = collections.PatchCollection(patches) #, cmap=matplotlib.cm.jet)
+    # ax.add_collection(p)
+    # ax.xaxis.set_major_locator(ticker.MultipleLocator(20)) # (MultipleLocator(20)) 
+    # ax.yaxis.set_major_locator(ticker.MultipleLocator(20)) # (MultipleLocator(20)) 
     plt.xlabel('Longitude')
     plt.ylabel('Latitude')
-    plt.title('US Map of Twitter Users mean of min & max '+str(granularity).strip()+' person per cluster')
-    plt.savefig(filename+'.jpg')
-    plt.show() #pylab.show()            
+    plt.title('US Map of Twitter Users mean of min & max ' + str(granularity).strip() + ' person per cluster')
+    plt.savefig(filename + '.jpg')
+    plt.show()  # pylab.show()            
 
 
 
@@ -505,9 +521,14 @@ def partitionLocView(granularity=10):
 
 
 def createTrainDir(granularity=10, create_dir=False):
-    global costMatrix
-    #readlocationclusters
-    filename = path.join(GEOTEXT_HOME, 'processed_data/'+str(granularity).strip()+'_clustered.train')
+    # readlocationclusters
+    global classLatMean
+    global classLatMedian
+    global classLonMean
+    global classLonMedian
+    global testClasses
+    global devClasses
+    filename = path.join(GEOTEXT_HOME, 'processed_data/' + str(granularity).strip() + '_clustered.train')
     allpoints = []
     allpointsMinLat = []
     allpointsMaxLat = []
@@ -546,7 +567,7 @@ def createTrainDir(granularity=10, create_dir=False):
         os.mkdir(trainhome)
     i = -1
     for cluster in allpoints:
-        #create a directory
+        # create a directory
         i += 1
         lats = [float(location[0]) for location in cluster]
         longs = [float(location[1]) for location in cluster]
@@ -565,25 +586,26 @@ def createTrainDir(granularity=10, create_dir=False):
             os.mkdir(class_dir)
         
         for location in cluster:
-            #find user(s) in that collection
-            locationStr = location[0]+','+location[1]
+            # find user(s) in that collection
+            locationStr = location[0] + ',' + location[1]
             userstr = locationUser[locationStr]
             if not userstr:
                 print "fatal error: something is wrong, no user for this location: " + locationStr 
             locusers = []
             if " " in userstr:
-                #multiple users separated by space in this location
+                # multiple users separated by space in this location
                 locusers = userstr.split()
             else:
-                #just one single user in this location
+                # just one single user in this location
                 locusers.append(userstr.strip())
             # for each user in this location find the text
             # groupbyusersText should be true for this to work
-            #print "writing user texts in their corresponding geographical class in: " + class_dir
+            # print "writing user texts in their corresponding geographical class in: " + class_dir
             if create_dir:
                 for user in locusers:
-                    with codecs.open(path.join(class_dir, user), 'w', 'latin') as inf:
-                        inf.write(userText[user])
+                    if user in trainUsers:
+                        with codecs.open(path.join(class_dir, user), 'w', 'latin') as inf:
+                            inf.write(userText[user])
     print "train directories created and class median and mean lat,lon computed. trainfile: " + filename
     devDistances = []
     for user in devUsers:
@@ -604,23 +626,19 @@ def createTrainDir(granularity=10, create_dir=False):
         classIndex, dist = assignClass(latitude, longitude)
         testDistances.append(dist)
         testClasses[user] = classIndex
-    print "building cost matrix..."
-    costMatrix = np.ndarray(shape=(len(classLatMedian), len(classLatMedian)), dtype=float)
-    for i in classLatMedian:
-        lat = classLatMedian[i]
-        lon = classLonMedian[i]
-        for j in classLatMedian:
-            lat2 = classLatMedian[j]
-            lon2 = classLonMedian[j]
-            cost = distance(lat, lon, lat2, lon2)
-            costMatrix[i, j] = cost
+
+            
+
+
+        
+    
     print "Ideal mean dev distance is " + str(mean(devDistances))
     print "Ideal median dev distance is " + str(median(devDistances))
     
     print "Ideal mean test distance is " + str(mean(testDistances))
     print "Ideal median test distance is " + str(median(testDistances))
         
-#createTrainDir()
+# createTrainDir()
 def print_class_coordinates():
     for c in classLatMedian:
         print str(c) + '\t' + str(classLatMedian[c]) + '\t' + str(classLonMedian[c])
@@ -642,15 +660,16 @@ def assignClass(latitude, longitude):
         
 def createTestDevDir(type='test'):
     print 'creating ' + type + ' collection.'
-    t_home = path.join(users_home, type+'/')
+    t_home = path.join(users_home, type + '/')
     shutil.rmtree(t_home, ignore_errors=True)
     os.mkdir(t_home)
     userCollection = {}
-    if type=='test':
+    if type == 'test':
         userCollection = testUsers
         userClasses = testClasses
-    elif type=='dev':
+    elif type == 'dev':
         userCollection = devUsers
+        print len(devUsers)
         userClasses = devClasses
     else:
         print "fatal error in createTestDevDir type:" + type
@@ -664,8 +683,8 @@ def createTestDevDir(type='test'):
             os.makedirs(classDir)
         with codecs.open(path.join(classDir, user), 'w', 'latin') as inf:
             inf.write(text)
-#createTestDevDir('test')
-#createTestDevDir('dev')
+# createTestDevDir('test')
+# createTestDevDir('dev')
 def create_directories(granularity, write=False):
     createTrainDir(granularity, write)
     if write:
@@ -687,7 +706,7 @@ def evaluate(preds, U_test, categories, scores):
         location = userLocation[user].split(',')
         lat = float(location[0])
         lon = float(location[1])
-        #gaussian mixture model
+        # gaussian mixture model
         if gmm:
             sumMedianLat = 0
             sumMedianLon = 0
@@ -724,16 +743,16 @@ def evaluate(preds, U_test, categories, scores):
             distances.append(distance(lat, lon, medianlat, medianlon))
             sumMedianDistance = sumMedianDistance + distance(lat, lon, medianlat, medianlon)
             sumMeanDistance = sumMeanDistance + distance(lat, lon, meanlat, meanlon)
-    #averageMeanDistance = sumMeanDistance / float(len(preds))
-    #averageMedianDistance = sumMedianDistance / float(len(preds))
-    #print "Average mean distance is " + str(averageMeanDistance)
-    #print "Average median distance is " + str(averageMedianDistance)
+    # averageMeanDistance = sumMeanDistance / float(len(preds))
+    # averageMedianDistance = sumMedianDistance / float(len(preds))
+    # print "Average mean distance is " + str(averageMeanDistance)
+    # print "Average median distance is " + str(averageMedianDistance)
     print "Mean distance is " + str(mean(distances))
     print "Median distance is " + str(median(distances))
 
 def loss(preds, U_test, loss='median'):
     if len(preds) != len(testUsers): 
-        print "The number of test sample predictions is: "+ str(len(preds))
+        print "The number of test sample predictions is: " + str(len(preds))
         print "The number of test samples is: " + str(len(testUsers))
         print "fatal error!"
         sys.exit()
@@ -759,18 +778,16 @@ def loss(preds, U_test, loss='median'):
     averageMeanDistance = sumMeanDistance / float(len(preds))
     averageMedianDistance = sumMedianDistance / float(len(preds))
     medianDistance = median(distances)
-    #print "Average distance from class mean is " + str(averageMeanDistance)
-    #print "Average distance from class median is " + str(averageMedianDistance)
+    # print "Average distance from class mean is " + str(averageMeanDistance)
+    # print "Average distance from class median is " + str(averageMedianDistance)
     print "Mean distance is " + str(mean(distances))
     print "Median distance is " + str(median(distances))
     
-    if loss == 'median':
-        return medianDistance
-    elif loss == 'mean':
-        return averageMedianDistance  
+    return mean(distances), median(distances)
+
 def lossbycoordinates(coordinates):
     if len(coordinates) != len(testUsers): 
-        print "The number of test sample predictions is: "+ str(len(coordinates))
+        print "The number of test sample predictions is: " + str(len(coordinates))
         print "The number of test samples is: " + str(len(testUsers))
         print "fatal error!"
         sys.exit()
@@ -785,8 +802,8 @@ def lossbycoordinates(coordinates):
         lon = float(location[1])
         distances.append(distance(lat, lon, coordinates[i][0], coordinates[i][1]))
         
-    #print "Average distance from class mean is " + str(averageMeanDistance)
-    #print "Average distance from class median is " + str(averageMedianDistance)
+    # print "Average distance from class mean is " + str(averageMeanDistance)
+    # print "Average distance from class median is " + str(averageMedianDistance)
     print "Mean distance is " + str(mean(distances))
     print "Median distance is " + str(median(distances))
     
@@ -833,6 +850,12 @@ def feature_extractor(encoding='utf-8'):
     global U_train
     global U_dev
     global U_test
+    
+    global costMatrix
+    global trainCostMatrix
+    global testCostMatrix
+    global devCostMatrix
+    
     trainDir = path.join(GEOTEXT_HOME, 'processed_data/train')
     testDir = path.join(GEOTEXT_HOME, 'processed_data/test')
     devDir = path.join(GEOTEXT_HOME, 'processed_data/dev')
@@ -844,10 +867,10 @@ def feature_extractor(encoding='utf-8'):
     
     categories = data_train.target_names
     
-    U_train = [path.basename(data_train.filenames[i]) for i in range(0, len(data_train.filenames))]
-    U_test = [path.basename(data_test.filenames[i]) for i in range(0, len(data_test.filenames))]
-    U_dev = [path.basename(data_dev.filenames[i]) for i in range(0, len(data_dev.filenames))]
-    
+    U_train = [path.basename(data_train.filenames[i]).decode('utf-8') for i in range(0, len(data_train.filenames))]
+    U_test = [path.basename(data_test.filenames[i]).decode('utf-8') for i in range(0, len(data_test.filenames))]
+    U_dev = [path.basename(data_dev.filenames[i]).decode('utf-8') for i in range(0, len(data_dev.filenames))]
+
     def size_mb(docs):
         return sum(len(s.encode(encoding)) for s in docs) / 1e6
     
@@ -870,7 +893,7 @@ def feature_extractor(encoding='utf-8'):
     Y_test = data_test.target
     Y_dev = data_dev.target
     
-    
+   
     print("Extracting features from the training dataset using a sparse vectorizer")
     t0 = time.time()
     vectorizer = TfidfVectorizer(use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=2, max_df=1.0, ngram_range=(1, 1), stop_words='english')
@@ -915,7 +938,7 @@ def feature_extractor(encoding='utf-8'):
         ppmiTransform(X_test)
     
             
-    chi = False
+    chi = True
     if chi:
         k = 20000
         print("Extracting %d best features by a chi-squared test" % 0)
@@ -926,22 +949,62 @@ def feature_extractor(encoding='utf-8'):
         X_dev = ch2.transform(X_dev)
         print("done in %fs" % (time.time() - t0))
         print()
-        #feature_names = np.asarray(vectorizer.get_feature_names())
+        # feature_names = np.asarray(vectorizer.get_feature_names())
     feature_names = np.asarray(vectorizer.get_feature_names())
+    
+    print "building cost matrix..."
+    costMatrix = np.ndarray(shape=(len(classLatMedian), len(classLatMedian)), dtype=float)
+    for i in range(0, len(categories)):
+        lat = classLatMedian[str(i)]
+        lon = classLonMedian[str(categories[i])]
+        for j in classLatMedian:
+            lat2 = classLatMedian[j]
+            lon2 = classLonMedian[j]
+            cost = distance(lat, lon, lat2, lon2)
+            costMatrix[i, j] = cost
+    
+    print "building sample based cost matrix..."
+    trainCostMatrix = np.ndarray(shape=(X_train.shape[0], len(categories)), dtype=float)
+    for i in range(0, trainCostMatrix.shape[0]):
+        lat, lon = locationStr2Float(trainUsers[U_train[i]])
+        for j in range(0, trainCostMatrix.shape[1]):
+            lat2 = classLatMedian[str(j)]
+            lon2 = classLonMedian[str(j)]
+            trainCostMatrix[i, j] = distance(lat, lon, lat2, lon2)
+    
+    devCostMatrix = np.ndarray(shape=(X_dev.shape[0], len(categories)), dtype=float)
+    for i in range(0, devCostMatrix.shape[0]):
+        lat, lon = locationStr2Float(devUsers[U_dev[i]])
+        for j in range(0, devCostMatrix.shape[1]):
+            lat2 = classLatMedian[str(j)]
+            lon2 = classLonMedian[str(j)]
+            devCostMatrix[i, j] = distance(lat, lon, lat2, lon2)        
+    
+    testCostMatrix = np.ndarray(shape=(X_test.shape[0], len(categories)), dtype=float)
+    for i in range(0, testCostMatrix.shape[0]):
+        lat, lon = locationStr2Float(testUsers[U_test[i]])
+        for j in range(0, testCostMatrix.shape[1]):
+            lat2 = classLatMedian[str(j)]
+            lon2 = classLonMedian[str(j)]
+            testCostMatrix[i, j] = distance(lat, lon, lat2, lon2)  
+            
     return X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names
     
 def abod(probs, preds, U_test):
-    print "running abod to find the Approximate Bayes-Optimal Decision..."
+    #print "running abod to find the Approximate Bayes-Optimal Decision..."
     n_samples = probs.shape[0]
     n_categories = probs.shape[1]
     assert n_categories == len(categories), "fatal error: n_categories is not equal to len(categories) in abod"
+    probs = probs**1
+    preds = preds**1
     preds2 = []
     for s in range(0, n_samples):
         minCost = 1000000000.0
         minCostClass = -1
-        #select top n prob indices
-        for cf in sorted(range(len(probs[s])), key=lambda i: probs[s, i])[-3:]:
-            #print probs[s]
+        # select top n prob indices
+        #for cf in sorted(range(len(probs[s])), key=lambda i: probs[s, i])[-3:]:
+        for cf in range(0, n_categories):
+            # print probs[s]
             cost = 0
             for co in range(0, n_categories):
                 cost = cost + probs[s, co] * costMatrix[cf, co]
@@ -949,38 +1012,60 @@ def abod(probs, preds, U_test):
                 minCost = cost
                 minCostClass = cf
         preds2.append(minCostClass)
-    loss(preds2, U_test)
-    return preds2
+    return loss(preds2, U_test)
+    
     
 def classify(granularity=10):
     X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1')
 
     #clf = LinearSVC(multi_class='ovr', class_weight='auto', C=1.0, loss='l2', penalty='l2', dual=True, tol=1e-3)
     #clf = LogisticRegression(penalty='l2')
-    clf = SGDClassifier(loss='log', learning_rate='optimal', n_iter=5)
+    #clf = SGDClassifier(loss='log', learning_rate='optimal', n_iter=5)
     #clf = RidgeClassifier(tol=1e-2, solver="auto")
     #clf = RidgeClassifier(alpha=1.0, fit_intercept=True, normalize=False, copy_X=True, max_iter=None, tol=1e-2, class_weight=None, solver="auto")
-    #clf = SVC(C=1.0, kernel='poly', degree=3, gamma=0.0, coef0=0.0, shrinking=True, probability=False, tol=0.001, cache_size=200, class_weight=None, verbose=False, max_iter=-1, random_state=None)
+    clf = SVC(C=1.0, kernel='rbf', degree=3, gamma=0.0, coef0=0.0, shrinking=True, probability=False, tol=0.001, cache_size=200, class_weight=None, verbose=False, max_iter=-1, random_state=None)
     #clf = Perceptron(n_iter=50)
     #clf = PassiveAggressiveClassifier(n_iter=50)
     #clf = KNeighborsClassifier(n_neighbors=10)
     #clf = NearestCentroid()
-    #clf = MultinomialNB(alpha=.01)
+    # clf = MultinomialNB(alpha=.01)
     print('_' * 80)
     print("Training: ")
     print(clf)
+    
     
     t0 = time.time()
     clf.fit(X_train, Y_train)
     train_time = time.time() - t0
     print("train time: %0.3fs" % train_time)
 
+    print '**********dev************'
+    devPreds = clf.predict(X_dev)
+    print("classification report:")
+    print(metrics.classification_report(Y_dev, devPreds, target_names=categories))
+    print("confusion matrix:")
+    print(metrics.confusion_matrix(Y_dev, devPreds))
+    score = metrics.f1_score(Y_dev, devPreds)
+    print("f1-score:   %0.3f" % score)
+    score = metrics.accuracy_score(Y_dev, devPreds)
+    print("Accuracy score:   %0.3f" % score)
+    
+    if hasattr(clf, 'coef_'):
+        print("dimensionality: %d" % clf.coef_.shape[1])
+        print("density: %f" % density(clf.coef_))
+        print("top 10 keywords per class:")
+        for i, category in enumerate(categories):
+            top10 = np.argsort(clf.coef_[i])[-10:]
+            print("%s: %s" % (category, " ".join(feature_names[top10])))
+    loss(devPreds, U_dev)
+    
+    
+    print "************test*************"    
     t0 = time.time()
     preds = clf.predict(X_test)
-    
-    #scores = clf.decision_function(X_test)
-    probs = clf.predict_proba(X_test)
-    #print preds.shape
+    # scores = clf.decision_function(X_test)
+    #probs = clf.predict_proba(X_test)
+    # print preds.shape
     test_time = time.time() - t0
     print("test time:  %0.3fs" % test_time)
     
@@ -1001,11 +1086,13 @@ def classify(granularity=10):
             top10 = np.argsort(clf.coef_[i])[-10:]
             print("%s: %s" % (category, " ".join(feature_names[top10])))
     loss(preds, U_test)
-    #loss(preds)
-    #evaluate(preds,U_test, categories, None)
-    abod(probs, preds, U_test)
+    print "development data"
+    loss(devPreds, U_dev)
+    # loss(preds)
+    # evaluate(preds,U_test, categories, None)
+    #abod(probs, preds, U_test)
    
-#classify()
+# classify()
 
 def loadGPData(DO_SVD=True, Reduction_D=100):
     data = {}
@@ -1079,7 +1166,7 @@ def loadGPData(DO_SVD=True, Reduction_D=100):
 def localizeGP(max_iters=100, kernel=None, optimize=True, plot=False):
     """Predict the location of a robot given wirelss signal strength readings."""
     data = loadGPData()
-    #data = GPy.util.datasets.robot_wireless()
+    # data = GPy.util.datasets.robot_wireless()
     print data
     # create simple GP Model
     m = GPy.models.GPRegression(data['Y'], data['X'], kernel=kernel)
@@ -1105,11 +1192,11 @@ def localizeGP(max_iters=100, kernel=None, optimize=True, plot=False):
         sumDist += distance(lat1, lon1, lat2, lon2)
     averageDist = float(sumDist) / Xpredict.shape[0]
     print "average distance is: " + str(averageDist)
-    #sse = ((data['Xtest'] - Xpredict)**2).sum()
-    #aae = np.absolute(data['Xtest'] - Xpredict).sum()
+    # sse = ((data['Xtest'] - Xpredict)**2).sum()
+    # aae = np.absolute(data['Xtest'] - Xpredict).sum()
     print m
-    #print('Sum of squares error on test data: ' + str(sse))
-    #print('average absolute error on test data: ' + str(aae))
+    # print('Sum of squares error on test data: ' + str(sse))
+    # print('average absolute error on test data: ' + str(aae))
     if plot:
         fig = pb.figure(None)
         pb.title('')
@@ -1117,7 +1204,7 @@ def localizeGP(max_iters=100, kernel=None, optimize=True, plot=False):
     return m
 def wireless(max_iters=100, kernel=None, optimize=True, plot=True):
     """Predict the location of a robot given wirelss signal strength readings."""
-    #data = loadGPData()
+    # data = loadGPData()
     data = GPy.util.datasets.robot_wireless()
     print data
     # create simple GP Model
@@ -1136,10 +1223,10 @@ def wireless(max_iters=100, kernel=None, optimize=True, plot=True):
         pb.legend(('True Location', 'Predicted Location'))
         
 
-    #sse = ((data['Xtest'] - Xpredict)**2).sum()
+    # sse = ((data['Xtest'] - Xpredict)**2).sum()
     aae = np.absolute(data['Xtest'] - Xpredict).sum()
     print m
-    #print('Sum of squares error on test data: ' + str(sse))
+    # print('Sum of squares error on test data: ' + str(sse))
     print('average absolute error on test data: ' + str(aae))
     if plot:
         fig = pb.figure(None)
@@ -1150,10 +1237,10 @@ def wireless(max_iters=100, kernel=None, optimize=True, plot=True):
 def wirelessSGD(max_iters=100, kernel=None, optimize=True, plot=True):
     """Predict the location of a robot given wirelss signal strength readings."""
     data = loadGPData()
-    #data = GPy.util.datasets.robot_wireless()
+    # data = GPy.util.datasets.robot_wireless()
     print data
     # create simple GP Model
-    m = GPy.models.GPMultioutputRegression(data['Y'], data['X'],  normalize_X=True, normalize_Y=True)
+    m = GPy.models.GPMultioutputRegression(data['Y'], data['X'], normalize_X=True, normalize_Y=True)
 
     # optimize
     if optimize:
@@ -1168,10 +1255,10 @@ def wirelessSGD(max_iters=100, kernel=None, optimize=True, plot=True):
         pb.legend(('True Location', 'Predicted Location'))
         
 
-    #sse = ((data['Xtest'] - Xpredict)**2).sum()
+    # sse = ((data['Xtest'] - Xpredict)**2).sum()
     aae = np.absolute(data['Xtest'] - Xpredict).sum()
     print m
-    #print('Sum of squares error on test data: ' + str(sse))
+    # print('Sum of squares error on test data: ' + str(sse))
     print('average absolute error on test data: ' + str(aae))
     if plot:
         fig = pb.figure(None)
@@ -1182,15 +1269,16 @@ def finalUserTextFile(home):
     fname = path.join(home, 'loctext.txt')
     with codecs.open(fname, 'w', 'latin1') as inf:
         pass
-        #TODO
-readGeoTextRecords()
-print 'reading train, dev and test file'
-users(trainfile, 'train')
-users(devfile, 'dev')
-users(testfile, 'test')
-print 'total ' + str(len(userLocation)).strip() + " users."
-fillUserByLocation()
-fillTextByUser()            
+        # TODO
+def initialize(encoding='latin'):    
+    readGeoTextRecords(encoding=encoding)
+    print 'reading train, dev and test file and building trainUsers, devUsers and testUsers with their locations'
+    users(trainfile, 'train', encoding=encoding)
+    users(devfile, 'dev', encoding=encoding)
+    users(testfile, 'test', encoding=encoding)
+    print 'total ' + str(len(userLocation)).strip() + " users."
+    fillUserByLocation()
+    fillTextByUser(encoding=encoding)            
 
 def asclassification(granularity=10):    
     create_directories(granularity, write=False)
@@ -1227,6 +1315,8 @@ class LogisticRegression(object):
         self.W = theano.shared(value=numpy.zeros((n_in, n_out),
                                                  dtype=theano.config.floatX),
                                 name='W', borrow=True)
+        
+        #self.W = theano.shared(value=numpy.random.rand(n_in, n_out), name='W', borrow=True)
         # initialize the baises b as a vector of n_out 0s
         self.b = theano.shared(value=numpy.zeros((n_out,),
                                                  dtype=theano.config.floatX),
@@ -1242,7 +1332,7 @@ class LogisticRegression(object):
         # parameters of the model
         self.params = [self.W, self.b]
 
-    def negative_log_likelihood(self, y, c):
+    def negative_log_likelihood(self, y):
         """Return the mean of the negative log-likelihood of the prediction
         of this model under a given target distribution.
 
@@ -1269,12 +1359,116 @@ class LogisticRegression(object):
         # LP[n-1,y[n-1]]] and T.mean(LP[T.arange(y.shape[0]),y]) is
         # the mean (across minibatch examples) of the elements in v,
         # i.e., the mean log-likelihood across the minibatch.
-        #print T.diag(T.dot(self.p_y_given_x[T.arange(y.shape[0]), 0:24], c[0:24, y]))
+        # print T.diag(T.dot(self.p_y_given_x[T.arange(y.shape[0]), 0:24], c[0:24, y]))
         
-        return T.mean(T.diag(T.dot(self.p_y_given_x, c[:, y])))
-        #return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        #1 main
+        return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        #2 entropy nll + entropy
+        #return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y]) - T.mean(T.sum(self.p_y_given_x * T.log(self.p_y_given_x), axis=1))
         
+    def example_cost_sensitive(self, y, sc):
+        """Return the mean of the negative log-likelihood of the prediction
+        of this model under a given target distribution.
 
+        .. math::
+
+            \frac{1}{|\mathcal{D}|} \mathcal{L} (\theta=\{W,b\}, \mathcal{D}) =
+            \frac{1}{|\mathcal{D}|} \sum_{i=0}^{|\mathcal{D}|} \log(P(Y=y^{(i)}|x^{(i)}, W,b)) \\
+                \ell (\theta=\{W,b\}, \mathcal{D})
+
+        :type y: theano.tensor.TensorType
+        :param y: corresponds to a vector that gives for each example the
+                  correct label
+
+        Note: we use the mean instead of the sum so that
+              the learning rate is less dependent on the batch size
+        """
+        # y.shape[0] is (symbolically) the number of rows in y, i.e.,
+        # number of examples (call it n) in the minibatch
+        # T.arange(y.shape[0]) is a symbolic vector which will contain
+        # [0,1,2,... n-1] T.log(self.p_y_given_x) is a matrix of
+        # Log-Probabilities (call it LP) with one row per example and
+        # one column per class LP[T.arange(y.shape[0]),y] is a vector
+        # v containing [LP[0,y[0]], LP[1,y[1]], LP[2,y[2]], ...,
+        # LP[n-1,y[n-1]]] and T.mean(LP[T.arange(y.shape[0]),y]) is
+        # the mean (across minibatch examples) of the elements in v,
+        # i.e., the mean log-likelihood across the minibatch.
+        # print T.diag(T.dot(self.p_y_given_x[T.arange(y.shape[0]), 0:24], c[0:24, y]))
+        #1 main
+        #return T.mean(T.sum(self.p_y_given_x * sc, axis=1))
+        #2 trevor
+        #return -T.mean(T.log(self.p_y_given_x) * T.exp(-0.01 * sc))
+        #3 nll+trevor
+        #return -0.1* T.mean(T.log(self.p_y_given_x) * T.exp(-0.01 * sc)) - T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        #6
+        #return -T.mean(T.log(self.p_y_given_x) * T.exp(-0.01 * sc)) - T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        #7
+        #return T.mean(T.log(self.p_y_given_x) * T.exp(-0.01 * sc)) * T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        #8
+        return T.mean(T.log(self.p_y_given_x**2) * T.exp(-0.01 * sc)) * T.mean(T.log(self.p_y_given_x**2)[T.arange(y.shape[0]), y])
+
+    def cost_sensitive_loss(self, y, c):
+        """Return the mean of the negative log-likelihood of the prediction
+        of this model under a given target distribution.
+
+        .. math::
+
+            \frac{1}{|\mathcal{D}|} \mathcal{L} (\theta=\{W,b\}, \mathcal{D}) =
+            \frac{1}{|\mathcal{D}|} \sum_{i=0}^{|\mathcal{D}|} \log(P(Y=y^{(i)}|x^{(i)}, W,b)) \\
+                \ell (\theta=\{W,b\}, \mathcal{D})
+
+        :type y: theano.tensor.TensorType
+        :param y: corresponds to a vector that gives for each example the
+                  correct label
+
+        Note: we use the mean instead of the sum so that
+              the learning rate is less dependent on the batch size
+        """
+        # y.shape[0] is (symbolically) the number of rows in y, i.e.,
+        # number of examples (call it n) in the minibatch
+        # T.arange(y.shape[0]) is a symbolic vector which will contain
+        # [0,1,2,... n-1] T.log(self.p_y_given_x) is a matrix of
+        # Log-Probabilities (call it LP) with one row per example and
+        # one column per class LP[T.arange(y.shape[0]),y] is a vector
+        # v containing [LP[0,y[0]], LP[1,y[1]], LP[2,y[2]], ...,
+        # LP[n-1,y[n-1]]] and T.mean(LP[T.arange(y.shape[0]),y]) is
+        # the mean (across minibatch examples) of the elements in v,
+        # i.e., the mean log-likelihood across the minibatch.
+        
+        # mean of costs
+        #1
+        #return T.mean(T.sum(self.p_y_given_x * T.transpose(c[:, y]), axis=1))
+        #2
+        #return T.mean(self.p_y_given_x[T.arange(y.shape[0]), y] * c[self.y_pred, y])
+        #3
+        #return T.mean(c[self.y_pred, y])
+        #4 main
+        #return 0.001 * T.mean(T.sum(self.p_y_given_x * T.transpose(c[:, y]), axis=1)) - T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        #5
+        #return 0.0001 * T.mean(T.sum(self.p_y_given_x * T.transpose(c[:, y]), axis=1)) - T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        #6
+        #return -T.mean(T.log(T.diag(T.dot(self.p_y_given_x, c[:, y])) / T.max(T.diag(T.dot(self.p_y_given_x, c[:, y]))))) -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        #7
+        #return T.mean(T.diag(T.dot(self.p_y_given_x, c[:, y])))
+        #8
+        #return T.min(T.diag(T.dot(self.p_y_given_x, c[:, y])))
+        #9
+        #return T.max(T.diag(T.dot(self.p_y_given_x, c[:, y])))
+        #10
+        #return T.max(T.diag(T.dot(self.p_y_given_x, c[:, y]))) + T.mean(T.diag(T.dot(self.p_y_given_x, c[:, y])))
+        #11
+        #return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        #12
+        #return T.mean(self.p_y_given_x[T.arange(y.shape[0]), y] * c[self.y_pred, y])
+        #13
+        #return T.mean(T.sum(-T.log(self.p_y_given_x) * T.transpose(c[:, y]), axis=1))
+        #14
+        #return T.mean(T.sum(self.p_y_given_x * T.exp(0.001 * T.transpose(c[:, y])), axis=1))
+        #15
+        #return T.mean(T.sum((self.p_y_given_x**3) * T.transpose(c[:, y]), axis=1))
+        #16
+        return T.mean(T.sum((T.exp(self.p_y_given_x)) * T.transpose(c[:, y]), axis=1))
+        
     def errors(self, y):
         """Return a float representing the number of errors in the minibatch
         over the total number of examples of the minibatch ; zero one
@@ -1337,18 +1531,17 @@ def load_data(dataset):
     print y.shape
     '''
     create_directories(granularity=640, write=False)
-    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names  = feature_extractor(encoding='latin1')
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1')
     test_set = (X_test.toarray(), Y_test)
     valid_set = (X_dev.toarray(), Y_dev)
     train_set = (X_train.toarray(), Y_train)
-    #cost_set = (costMatrix, Y_test)
 
-    #train_set, valid_set, test_set format: tuple(input, target)
-    #input is an numpy.ndarray of 2 dimensions (a matrix)
-    #witch row's correspond to an example. target is a
-    #numpy.ndarray of 1 dimensions (vector)) that have the same length as
-    #the number of rows in the input. It should give the target
-    #target to the example with the same index in the input.
+    # train_set, valid_set, test_set format: tuple(input, target)
+    # input is an numpy.ndarray of 2 dimensions (a matrix)
+    # witch row's correspond to an example. target is a
+    # numpy.ndarray of 1 dimensions (vector)) that have the same length as
+    # the number of rows in the input. It should give the target
+    # target to the example with the same index in the input.
 
     def shared_dataset(data_xy, borrow=True):
         """ Function that loads the dataset into shared variables
@@ -1378,15 +1571,17 @@ def load_data(dataset):
     test_set_x, test_set_y = shared_dataset(test_set)
     valid_set_x, valid_set_y = shared_dataset(valid_set)
     train_set_x, train_set_y = shared_dataset(train_set)
-    
-    #missclassificationCostMatrix, dummyvar = shared_dataset(cost_set)
     missclassificationCostMatrix = theano.shared(costMatrix, borrow=True)
+    trainCostMatrix2 = normalize(trainCostMatrix, norm='l2', axis=1, copy=True)
+    missclassificationTrainCostMatrix = theano.shared(trainCostMatrix2, borrow=True)
+    missclassificationDevCostMatrix = theano.shared(devCostMatrix, borrow=True)
+    missclassificationTestCostMatrix = theano.shared(testCostMatrix, borrow=True)
     rval = [(train_set_x, train_set_y), (valid_set_x, valid_set_y),
-            (test_set_x, test_set_y), Y_test, missclassificationCostMatrix]
+            (test_set_x, test_set_y), Y_test, missclassificationCostMatrix, missclassificationTrainCostMatrix, missclassificationDevCostMatrix, missclassificationTestCostMatrix]
     return rval
-def sgd_optimization_mnist(learning_rate=0.2, n_epochs=100000,
+def sgd_optimization_mnist(learning_rate=0.1, n_epochs=1000,
                            dataset='mnist.pkl.gz',
-                           batch_size=1):
+                           batch_size=1, modelType='nll'):
     """
     Demonstrate stochastic gradient descent optimization of a log-linear
     model
@@ -1412,6 +1607,9 @@ def sgd_optimization_mnist(learning_rate=0.2, n_epochs=100000,
     test_set_x, test_set_y = datasets[2]
     Y_test = datasets[3]
     missclassificationCostMatrix = datasets[4]
+    missclassificationTrainCostMatrix = datasets[5]
+    missclassificationDevCostMatrix = datasets[6]
+    missclassificationTestCostMatrix = datasets[7]
     # compute number of minibatches for training, validation and testing
     n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
     n_valid_batches = valid_set_x.get_value(borrow=True).shape[0] / batch_size
@@ -1422,13 +1620,16 @@ def sgd_optimization_mnist(learning_rate=0.2, n_epochs=100000,
     # BUILD ACTUAL MODEL #
     ######################
     print '... building the model'
+    print 'learning_rate = ' + str(learning_rate) + ' batch_size = ' + str(batch_size) + ' epochs = ' + str(n_epochs)
 
     # allocate symbolic variables for the data
     index = T.lscalar()  # index to a [mini]batch
     x = T.matrix('x')  # the data is presented as rasterized images
     y = T.ivector('y')  # the labels are presented as 1D vector of
                            # [int] labels
-    c = T.matrix('c') #misclassification cost matrix
+    c = T.matrix('c')  # misclassification cost matrix
+    sc = T.matrix('sc')   #sample dependent cost
+    
 
     # construct the logistic regression class
     # Each MNIST image has size 28*28
@@ -1437,8 +1638,10 @@ def sgd_optimization_mnist(learning_rate=0.2, n_epochs=100000,
 
     # the cost we minimize during training is the negative log likelihood of
     # the model in symbolic format
-    cost = classifier.negative_log_likelihood(y, c)
-
+    #cost = classifier.negative_log_likelihood(y)
+    cost = classifier.cost_sensitive_loss(y, c)
+    #cost = classifier.example_cost_sensitive(y, sc)
+    
     # compiling a Theano function that computes the mistakes that are made by
     # the model on a minibatch
     test_model = theano.function(inputs=[index],
@@ -1452,6 +1655,300 @@ def sgd_optimization_mnist(learning_rate=0.2, n_epochs=100000,
             givens={
                 x: valid_set_x[index * batch_size:(index + 1) * batch_size],
                 y: valid_set_y[index * batch_size:(index + 1) * batch_size]})
+    
+    predict = theano.function(inputs=[],
+            outputs=[classifier.y_pred, classifier.errors(y)],
+            givens={
+                x: test_set_x,
+                y: test_set_y})
+    
+    probs = theano.function(inputs=[],
+            outputs=classifier.p_y_given_x,
+            givens={
+                x: test_set_x})
+    
+    evalCostNLL = theano.function(inputs=[],
+            outputs=classifier.negative_log_likelihood(y),
+            givens={
+                x: test_set_x,
+                y: test_set_y})
+
+    
+    evalCostClass = theano.function(inputs=[],
+            outputs=classifier.cost_sensitive_loss(y, c),
+            givens={
+                x: test_set_x,
+                y: test_set_y,
+                c: missclassificationCostMatrix})
+    
+    evalCostExample = theano.function(inputs=[],
+            outputs=classifier.example_cost_sensitive(y, sc),
+            givens={
+                x: test_set_x,
+                y: test_set_y,
+                sc: missclassificationTestCostMatrix})
+
+    # compute the gradient of cost with respect to theta = (W,b)
+    g_W = T.grad(cost=cost, wrt=classifier.W)
+    g_b = T.grad(cost=cost, wrt=classifier.b)
+
+    # specify how to update the parameters of the model as a list of
+    # (variable, update expression) pairs.
+    updates = [(classifier.W, classifier.W - learning_rate * g_W),
+               (classifier.b, classifier.b - learning_rate * g_b)]
+    
+    # compiling a Theano function `train_model` that returns the cost, but in
+    # the same time updates the parameter of the model based on the rules
+    # defined in `updates`
+    '''
+    train_model = theano.function(inputs=[index],
+            outputs=classifier.negative_log_likelihood(y),
+            updates=updates,
+            givens={
+                x: train_set_x[index * batch_size:(index + 1) * batch_size],
+                y: train_set_y[index * batch_size:(index + 1) * batch_size]})   
+             
+    '''
+    train_model = theano.function(inputs=[index],
+            outputs=classifier.cost_sensitive_loss(y, c),
+            updates=updates,
+            givens={
+                x: train_set_x[index * batch_size:(index + 1) * batch_size],
+                y: train_set_y[index * batch_size:(index + 1) * batch_size],
+                c: missclassificationCostMatrix})
+    '''
+    train_model = theano.function(inputs=[index],
+            outputs=classifier.example_cost_sensitive(y, sc),
+            updates=updates,
+            givens={
+                x: train_set_x[index * batch_size:(index + 1) * batch_size],
+                y: train_set_y[index * batch_size:(index + 1) * batch_size],
+                sc: missclassificationTrainCostMatrix[index * batch_size:(index + 1) * batch_size]})
+    '''
+    
+    
+
+
+
+    
+    ###############
+    # TRAIN MODEL #
+    ###############
+    print '... training the model'
+    # early-stopping parameters
+    patience = 500000  # look as this many examples regardless
+    patience_increase = 4  # wait this much longer when a new best is
+                                  # found
+    improvement_threshold = 0.9995  # a relative improvement of this much is
+                                  # considered significant
+    validation_frequency = min(n_train_batches, patience / 2)
+                                  # go through this many
+                                  # minibatche before checking the network
+                                  # on the validation set; in this case we
+                                  # check every epoch
+
+    best_params = None
+    best_validation_loss = numpy.inf
+    test_score = 0.
+    best_predictions = []
+    start_time = time.clock()
+
+    done_looping = False
+    epoch = 0
+    change2class = False
+    while (epoch < n_epochs) and (not done_looping):
+        epoch = epoch + 1
+
+        best_predictions , errorRate = predict()
+        meanD, medianD = loss(best_predictions, U_test)
+        all_probs = probs()
+        abodMean, abodMedian = abod(all_probs, best_predictions, U_test)
+        print str(epoch) + ',' + str(evalCostNLL()) + ',' + str(evalCostClass()) + ',' +  str(evalCostExample())  + ',' + str(errorRate) + ',' +  str(meanD) + ',' + str(medianD) + ',' + str(abodMean) + ',' + str(abodMedian) + '\n'
+        if (epoch > 100 or errorRate < 0.65) and change2class:
+            change2class = False
+            print "changed to class based mode"
+            cost = classifier.cost_sensitive_loss(y, c)
+            train_model = theano.function(inputs=[index],
+            outputs=classifier.cost_sensitive_loss(y, c),
+            updates=updates,
+            givens={
+                x: train_set_x[index * batch_size:(index + 1) * batch_size],
+                y: train_set_y[index * batch_size:(index + 1) * batch_size],
+                c: missclassificationCostMatrix})
+
+        
+        for minibatch_index in xrange(n_train_batches):
+            minibatch_avg_cost = train_model(minibatch_index)
+            # iteration number
+            iter = (epoch - 1) * n_train_batches + minibatch_index
+
+            if (iter + 1) % validation_frequency == 0:
+                # compute zero-one loss on validation set
+                validation_losses = [validate_model(i)
+                                     for i in xrange(n_valid_batches)]
+                this_validation_loss = numpy.mean(validation_losses)
+                '''
+                print('epoch %i, minibatch %i/%i, validation error %f %%' % \
+                    (epoch, minibatch_index + 1, n_train_batches,
+                    this_validation_loss * 100.))
+                '''
+                # if we got the best validation score until now
+                if this_validation_loss < best_validation_loss:
+                    # improve patience if loss improvement is good enough
+                    if this_validation_loss < best_validation_loss * \
+                       improvement_threshold:
+                        patience = max(patience, iter * patience_increase)
+
+                    best_validation_loss = this_validation_loss
+                    # test it on the test set
+
+                    test_losses = [test_model(i)
+                                   for i in xrange(n_test_batches)]
+                    test_score = numpy.mean(test_losses)
+                    '''
+                    print(('     epoch %i, minibatch %i/%i, test error of best'
+                       ' model %f %%') % 
+                        (epoch, minibatch_index + 1, n_train_batches,
+                         test_score * 100.))
+                    
+                    best_predictions = predict()[0]
+                    all_probs = probs()
+            
+                    print "class predicted for user " + U_test[0] + " : " + categories[best_predictions[0]] + " but it should be " + categories[Y_test[0]]
+                    print "class predicted for user " + U_test[1] + " : " + categories[best_predictions[1]] + " but it should be " + categories[Y_test[1]]
+                    print "class predicted for user " + U_test[2] + " : " + categories[best_predictions[2]] + " but it should be " + categories[Y_test[2]]
+                    print "class predicted for user " + U_test[3] + " : " + categories[best_predictions[3]] + " but it should be " + categories[Y_test[3]]
+                    print "class predicted for user " + U_test[4] + " : " + categories[best_predictions[4]] + " but it should be " + categories[Y_test[4]]
+                    print "class predicted for user " + U_test[5] + " : " + categories[best_predictions[5]] + " but it should be " + categories[Y_test[5]]
+                    print "class predicted for user " + U_test[6] + " : " + categories[best_predictions[6]] + " but it should be " + categories[Y_test[6]]
+                    print "class predicted for user " + U_test[7] + " : " + categories[best_predictions[7]] + " but it should be " + categories[Y_test[7]]
+                    print "class predicted for user " + U_test[8] + " : " + categories[best_predictions[8]] + " but it should be " + categories[Y_test[8]]
+                    print "class predicted for user " + U_test[9] + " : " + categories[best_predictions[9]] + " but it should be " + categories[Y_test[9]]
+                    print "class predicted for user " + U_test[10] + " : " + categories[best_predictions[10]] + " but it should be " + categories[Y_test[10]]
+                    print "class predicted for user " + U_test[1890] + " : " + categories[best_predictions[1890]] + " but it should be " + categories[Y_test[1890]]
+                    print "class predicted for user " + U_test[1891] + " : " + categories[best_predictions[1891]] + " but it should be " + categories[Y_test[1891]]
+                    print "class predicted for user " + U_test[1892] + " : " + categories[best_predictions[1894]] + " but it should be " + categories[Y_test[1892]]
+                    print "class predicted for user " + U_test[1893] + " : " + categories[best_predictions[1893]] + " but it should be " + categories[Y_test[1893]]
+                    print "class predicted for user " + U_test[1894] + " : " + categories[best_predictions[1894]] + " but it should be " + categories[Y_test[1894]]
+                    
+                    loss(best_predictions, U_test)
+                    
+                    abod(all_probs, best_predictions, U_test)
+                    
+                    print "NNL = " + str(evalCostNLL())
+                    print "class based cost = " + str(evalCostClass())
+                    print "sample based cost = " + str(evalCostExample())
+                    print "---------------"
+                    '''
+            if patience <= iter:
+                done_looping = True
+                break
+
+    end_time = time.clock()
+    '''
+    print(('Optimization complete with best validation score of %f %%,'
+           'with test performance %f %%') % 
+                 (best_validation_loss * 100., test_score * 100.))
+    print 'The code run for %d epochs, with %f epochs/sec' % (
+        epoch, 1. * epoch / (end_time - start_time))
+    print >> sys.stderr, ('The code for file ' + 
+                          os.path.split(__file__)[1] + 
+                          ' ran for %.1fs' % ((end_time - start_time)))
+    '''
+def theano_fit_predict(X_train, Y_train, X_test, Y_test, costM=None, learning_rate=0.1, n_epochs=10,
+                           dataset='mnist.pkl.gz',
+                           batch_size=20):
+    """
+    Demonstrate stochastic gradient descent optimization of a log-linear
+    model
+
+    This is demonstrated on MNIST.
+
+    :type learning_rate: float
+    :param learning_rate: learning rate used (factor for the stochastic
+                          gradient)
+
+    :type n_epochs: int
+    :param n_epochs: maximal number of epochs to run the optimizer
+
+    :type dataset: string
+    :param dataset: the path of the MNIST dataset file from
+                 http://www.iro.umontreal.ca/~lisa/deep/data/mnist/mnist.pkl.gz
+
+    """
+    test_set = (X_test, Y_test)
+    train_set = (X_train, Y_train)
+    
+    def shared_dataset(data_xy, borrow=True):
+        """ Function that loads the dataset into shared variables
+    
+        The reason we store our dataset in shared variables is to allow
+        Theano to copy it into the GPU memory (when code is run on GPU).
+        Since copying data into the GPU is slow, copying a minibatch everytime
+        is needed (the default behaviour if the data is not in a shared
+        variable) would lead to a large decrease in performance.
+        """
+        data_x, data_y = data_xy
+        shared_x = theano.shared(numpy.asarray(data_x,
+                                               dtype=theano.config.floatX),
+                                 borrow=borrow)
+        shared_y = theano.shared(numpy.asarray(data_y,
+                                               dtype=theano.config.floatX),
+                                 borrow=borrow)
+        # When storing data on the GPU it has to be stored as floats
+        # therefore we will store the labels as ``floatX`` as well
+        # (``shared_y`` does exactly that). But during our computations
+        # we need them as ints (we use labels as index, and if they are
+        # floats it doesn't make sense) therefore instead of returning
+        # ``shared_y`` we will have to cast it to int. This little hack
+        # lets ous get around this issue
+        return shared_x, T.cast(shared_y, 'int32')
+    
+    # datasets = load_data(dataset)
+    test_set_x, test_set_y = shared_dataset(test_set)
+    train_set_x, train_set_y = shared_dataset(train_set)
+    missclassificationCostMatrix = None
+    if costM is not None:
+        missclassificationCostMatrix = theano.shared(costM, borrow=True)
+    
+    
+    # compute number of minibatches for training, validation and testing
+    n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
+    n_test_batches = test_set_x.get_value(borrow=True).shape[0] / batch_size
+
+    
+    ######################
+    # BUILD ACTUAL MODEL #
+    ######################
+    print '... building the model'
+
+    # allocate symbolic variables for the data
+    index = T.lscalar()  # index to a [mini]batch
+    x = T.matrix('x')  # the data is presented as rasterized images
+    y = T.ivector('y')  # the labels are presented as 1D vector of
+                           # [int] labels
+    c = T.matrix('c')  # misclassification cost matrix
+
+    # construct the logistic regression class
+    # Each MNIST image has size 28*28
+    # classifier = LogisticRegression(input=x, n_in=28 * 28, n_out=10)
+    classifier = LogisticRegression(input=x, n_in=train_set_x.get_value(borrow=True).shape[1], n_out=4)
+
+    # the cost we minimize during training is the negative log likelihood of
+    # the model in symbolic format
+    if costM == None:
+        cost = classifier.negative_log_likelihood(y)
+    else:
+        cost = classifier.cost_sensitive_loss(y, c)
+
+    # compiling a Theano function that computes the mistakes that are made by
+    # the model on a minibatch
+    test_model = theano.function(inputs=[index],
+            outputs=classifier.errors(y),
+            givens={
+                x: test_set_x[index * batch_size: (index + 1) * batch_size],
+                y: test_set_y[index * batch_size: (index + 1) * batch_size]})
+
     
     predict = theano.function(inputs=[],
             outputs=[classifier.y_pred, classifier.errors(y)],
@@ -1477,13 +1974,21 @@ def sgd_optimization_mnist(learning_rate=0.2, n_epochs=100000,
     # compiling a Theano function `train_model` that returns the cost, but in
     # the same time updates the parameter of the model based on the rules
     # defined in `updates`
-    train_model = theano.function(inputs=[index],
+    if costM is None:
+         train_model = theano.function(inputs=[index],
             outputs=cost,
             updates=updates,
             givens={
                 x: train_set_x[index * batch_size:(index + 1) * batch_size],
-                y: train_set_y[index * batch_size:(index + 1) * batch_size],
-                c: missclassificationCostMatrix})
+                y: train_set_y[index * batch_size:(index + 1) * batch_size]})
+    else:
+        train_model = theano.function(inputs=[index],
+                outputs=cost,
+                updates=updates,
+                givens={
+                    x: train_set_x[index * batch_size:(index + 1) * batch_size],
+                    y: train_set_y[index * batch_size:(index + 1) * batch_size],
+                    c: missclassificationCostMatrix})
 
     ###############
     # TRAIN MODEL #
@@ -1502,7 +2007,7 @@ def sgd_optimization_mnist(learning_rate=0.2, n_epochs=100000,
                                   # check every epoch
 
     best_params = None
-    best_validation_loss = numpy.inf
+    best_test_loss = numpy.inf
     test_score = 0.
     best_predictions = []
     start_time = time.clock()
@@ -1516,225 +2021,31 @@ def sgd_optimization_mnist(learning_rate=0.2, n_epochs=100000,
             # iteration number
             iter = (epoch - 1) * n_train_batches + minibatch_index
 
-            if (iter + 1) % validation_frequency == 0:
-                # compute zero-one loss on validation set
-                validation_losses = [validate_model(i)
-                                     for i in xrange(n_valid_batches)]
-                this_validation_loss = numpy.mean(validation_losses)
 
-                print('epoch %i, minibatch %i/%i, validation error %f %%' % \
-                    (epoch, minibatch_index + 1, n_train_batches,
-                    this_validation_loss * 100.))
-
-                # if we got the best validation score until now
-                if this_validation_loss < best_validation_loss:
-                    #improve patience if loss improvement is good enough
-                    if this_validation_loss < best_validation_loss *  \
-                       improvement_threshold:
-                        patience = max(patience, iter * patience_increase)
-
-                    best_validation_loss = this_validation_loss
-                    # test it on the test set
-
-                    test_losses = [test_model(i)
-                                   for i in xrange(n_test_batches)]
-                    test_score = numpy.mean(test_losses)
-
-                    print(('     epoch %i, minibatch %i/%i, test error of best'
-                       ' model %f %%') %
-                        (epoch, minibatch_index + 1, n_train_batches,
-                         test_score * 100.))
-                    best_predictions = predict()[0]
-                    all_probs = probs()
+            test_losses = [test_model(i) for i in xrange(n_test_batches)]
             
-                    print "class predicted for user " + U_test[0] + " : " + categories[best_predictions[0]] + " but it should be " + categories[Y_test[0]]
-                    print "class predicted for user " + U_test[1] + " : " + categories[best_predictions[1]] + " but it should be " + categories[Y_test[1]]
-                    print "class predicted for user " + U_test[2] + " : " + categories[best_predictions[2]] + " but it should be " + categories[Y_test[2]]
-                    print "class predicted for user " + U_test[3] + " : " + categories[best_predictions[3]] + " but it should be " + categories[Y_test[3]]
-                    print "class predicted for user " + U_test[4] + " : " + categories[best_predictions[4]] + " but it should be " + categories[Y_test[4]]
-                    print "class predicted for user " + U_test[5] + " : " + categories[best_predictions[5]] + " but it should be " + categories[Y_test[5]]
-                    print "class predicted for user " + U_test[6] + " : " + categories[best_predictions[6]] + " but it should be " + categories[Y_test[6]]
-                    print "class predicted for user " + U_test[7] + " : " + categories[best_predictions[7]] + " but it should be " + categories[Y_test[7]]
-                    print "class predicted for user " + U_test[8] + " : " + categories[best_predictions[8]] + " but it should be " + categories[Y_test[8]]
-                    print "class predicted for user " + U_test[9] + " : " + categories[best_predictions[9]] + " but it should be " + categories[Y_test[9]]
-                    print "class predicted for user " + U_test[10] + " : " + categories[best_predictions[10]] + " but it should be " + categories[Y_test[10]]
-                    print "class predicted for user " + U_test[1890] + " : " + categories[best_predictions[1890]] + " but it should be " + categories[Y_test[1890]]
-                    print "class predicted for user " + U_test[1891] + " : " + categories[best_predictions[1891]] + " but it should be " + categories[Y_test[1891]]
-                    print "class predicted for user " + U_test[1892] + " : " + categories[best_predictions[1894]] + " but it should be " + categories[Y_test[1892]]
-                    print "class predicted for user " + U_test[1893] + " : " + categories[best_predictions[1893]] + " but it should be " + categories[Y_test[1893]]
-                    print "class predicted for user " + U_test[1894] + " : " + categories[best_predictions[1894]] + " but it should be " + categories[Y_test[1894]]
-                    
-                    loss(best_predictions, U_test)
-                    
-                    abod(all_probs,best_predictions, U_test)
-
-            if patience <= iter:
-                done_looping = True
-                break
-
+            if test_losses < best_test_loss:
+                best_test_loss = test_losses
+                test_score = numpy.mean(test_losses)
+                print(('     epoch %i, minibatch %i/%i, test error of best'
+                       ' model %f %%') % 
+                      (epoch, minibatch_index + 1, n_train_batches,
+                       test_score * 100.))
+            best_predictions = predict()[0]
+            
+            # all_probs = probs()
+            
     end_time = time.clock()
     print(('Optimization complete with best validation score of %f %%,'
-           'with test performance %f %%') %
-                 (best_validation_loss * 100., test_score * 100.))
+           'with test performance %f %%') % 
+                 (best_test_loss * 100., test_score * 100.))
     print 'The code run for %d epochs, with %f epochs/sec' % (
         epoch, 1. * epoch / (end_time - start_time))
-    print >> sys.stderr, ('The code for file ' +
-                          os.path.split(__file__)[1] +
-                          ' ran for %.1fs' % ((end_time - start_time)))
-    
+    print >> sys.stderr, ('The code for file ' + 
+                          os.path.split(__file__)[1] + 
+                          ' ran for %.1fs' % ((end_time - start_time))) 
+    return best_predictions   
    
-def gd_optimization_mnist(learning_rate=0.01, n_epochs=1000,
-                           dataset='mnist.pkl.gz',
-                           batch_size=600):
-    """
-    Demonstrate stochastic gradient descent optimization of a log-linear
-    model
-
-    This is demonstrated on MNIST.
-
-    :type learning_rate: float
-    :param learning_rate: learning rate used (factor for the stochastic
-                          gradient)
-
-    :type n_epochs: int
-    :param n_epochs: maximal number of epochs to run the optimizer
-
-    :type dataset: string
-    :param dataset: the path of the MNIST dataset file from
-                 http://www.iro.umontreal.ca/~lisa/deep/data/mnist/mnist.pkl.gz
-
-    """
-    datasets = load_data(dataset)
-
-    train_set_x, train_set_y = datasets[0]
-    valid_set_x, valid_set_y = datasets[1]
-    test_set_x, test_set_y = datasets[2]
-
-
-
-    
-    ######################
-    # BUILD ACTUAL MODEL #
-    ######################
-    print '... building the model'
-
-    # allocate symbolic variables for the data
-    index = T.lscalar()  # index to a [mini]batch
-    x = T.matrix('x')  # the data is presented as rasterized images
-    y = T.ivector('y')  # the labels are presented as 1D vector of
-                           # [int] labels
-
-    # construct the logistic regression class
-    # Each MNIST image has size 28*28
-    #classifier = LogisticRegression(input=x, n_in=28 * 28, n_out=10)
-    classifier = LogisticRegression(input=x, n_in=train_set_x.get_value(borrow=True).shape[1], n_out=25)
-
-    # the cost we minimize during training is the negative log likelihood of
-    # the model in symbolic format
-    cost = classifier.negative_log_likelihood(y)
-
-    # compiling a Theano function that computes the mistakes that are made by
-    # the model on a minibatch
-    test_model = theano.function(inputs=[],
-            outputs=classifier.errors(y),
-            givens={
-                x: test_set_x,
-                y: test_set_y})
-
-    validate_model = theano.function(inputs=[],
-            outputs=classifier.errors(y),
-            givens={
-                x: valid_set_x,
-                y: valid_set_y})
-    
-    predict = theano.function(inputs=[],
-            outputs=[classifier.y_pred, classifier.errors(y)],
-            givens={
-                x: test_set_x,
-                y: test_set_y})
-
-    # compute the gradient of cost with respect to theta = (W,b)
-    g_W = T.grad(cost=cost, wrt=classifier.W)
-    g_b = T.grad(cost=cost, wrt=classifier.b)
-
-    # specify how to update the parameters of the model as a list of
-    # (variable, update expression) pairs.
-    updates = [(classifier.W, classifier.W - learning_rate * g_W),
-               (classifier.b, classifier.b - learning_rate * g_b)]
-
-    # compiling a Theano function `train_model` that returns the cost, but in
-    # the same time updates the parameter of the model based on the rules
-    # defined in `updates`
-    train_model = theano.function(inputs=[],
-            outputs=cost,
-            updates=updates,
-            givens={
-                x: train_set_x,
-                y: train_set_y})
-
-    ###############
-    # TRAIN MODEL #
-    ###############
-    print '... training the model'
-
-
-    best_params = None
-    best_validation_loss = numpy.inf
-    test_score = 0.
-    best_predictions = []
-    start_time = time.clock()
-
-    epoch = 0
-    while (epoch < n_epochs):
-        epoch = epoch + 1
-
-        minibatch_avg_cost = train_model()
-
-
-        # compute zero-one loss on validation set
-        validation_losses = [validate_model()]
-        this_validation_loss = numpy.mean(validation_losses)
-
-        print('epoch %i, validation error %f %%' % \
-            (epoch, 
-            this_validation_loss * 100.))
-        
-        test_losses = [test_model()]
-        test_score = numpy.mean(test_losses)
-
-        print(('     epoch %i, test error of' ' model %f %%') %(epoch,test_score * 100.))
-        pred, err = predict()
-        print "test error is: "+ str(err)
-        predictions = copy.deepcopy(pred)
-        loss(predictions)
-        
-        # if we got the best validation score until now
-        if this_validation_loss < best_validation_loss:
-            #improve patience if loss improvement is good enough
-            best_validation_loss = this_validation_loss
-            # test it on the test set
-            best_test_loss = [test_model()]
-            test_score = numpy.mean(best_test_loss)
-            print(('     epoch %i, test error of best' ' model till now %f %%') %(epoch,test_score * 100.))
-            pred, best_err = predict()
-            print "test error is: "+ str(best_err)
-            best_predictions = copy.deepcopy(pred)
-            loss(best_predictions)
-            
-
-
-    print "best test error: " + str(best_err)
-    loss(best_predictions)
-    end_time = time.clock()
-    print(('Optimization complete with best validation score of %f %%,'
-           'with test performance %f %%') %
-                 (best_validation_loss * 100., test_score * 100.))
-    print 'The code run for %d epochs, with %f epochs/sec' % (
-        epoch, 1. * epoch / (end_time - start_time))
-    print >> sys.stderr, ('The code for file ' +
-                          os.path.split(__file__)[1] +
-                          ' ran for %.1fs' % ((end_time - start_time)))
-    
 
 
     
@@ -1931,7 +2242,7 @@ def test_mlp(learning_rate=0.01, L1_reg=0.00, L2_reg=0.0001, n_epochs=1000,
     rng = numpy.random.RandomState(1234)
 
     # construct the MLP class
-    #classifier = MLP(rng=rng, input=x, n_in= 28 * 28, n_hidden=n_hidden, n_out=10)
+    # classifier = MLP(rng=rng, input=x, n_in= 28 * 28, n_hidden=n_hidden, n_out=10)
     classifier = MLP(rng=rng, input=x, n_in=train_set_x.get_value(borrow=True).shape[1],
                      n_hidden=n_hidden, n_out=25)
 
@@ -2032,14 +2343,14 @@ def test_mlp(learning_rate=0.01, L1_reg=0.00, L2_reg=0.0001, n_epochs=1000,
                                      in xrange(n_valid_batches)]
                 this_validation_loss = numpy.mean(validation_losses)
 
-                print('epoch %i, minibatch %i/%i, validation error %f %%' %
+                print('epoch %i, minibatch %i/%i, validation error %f %%' % 
                      (epoch, minibatch_index + 1, n_train_batches,
                       this_validation_loss * 100.))
 
                 # if we got the best validation score until now
                 if this_validation_loss < best_validation_loss:
-                    #improve patience if loss improvement is good enough
-                    if this_validation_loss < best_validation_loss *  \
+                    # improve patience if loss improvement is good enough
+                    if this_validation_loss < best_validation_loss * \
                            improvement_threshold:
                         patience = max(patience, iter * patience_increase)
 
@@ -2052,7 +2363,7 @@ def test_mlp(learning_rate=0.01, L1_reg=0.00, L2_reg=0.0001, n_epochs=1000,
                     test_score = numpy.mean(test_losses)
 
                     print(('     epoch %i, minibatch %i/%i, test error of '
-                           'best model %f %%') %
+                           'best model %f %%') % 
                           (epoch, minibatch_index + 1, n_train_batches,
                            test_score * 100.))
 
@@ -2062,10 +2373,10 @@ def test_mlp(learning_rate=0.01, L1_reg=0.00, L2_reg=0.0001, n_epochs=1000,
 
     end_time = time.clock()
     print(('Optimization complete. Best validation score of %f %% '
-           'obtained at iteration %i, with test performance %f %%') %
+           'obtained at iteration %i, with test performance %f %%') % 
           (best_validation_loss * 100., best_iter + 1, test_score * 100.))
-    print >> sys.stderr, ('The code for file ' +
-                          os.path.split(__file__)[1] +
+    print >> sys.stderr, ('The code for file ' + 
+                          os.path.split(__file__)[1] + 
                           ' ran for %.2fm' % ((end_time - start_time) / 60.))
 
 def locationStr2Float(locationStr):
@@ -2077,7 +2388,7 @@ def mixtureModel():
     createTrainDir(640)
     createTestDevDir('test')
     createTestDevDir('dev')
-    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names  = feature_extractor(encoding='latin1')
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1')
 
     # Number of samples per component
     X = []
@@ -2124,7 +2435,7 @@ def mixtureModel():
     plt.xticks(n_components_range)
     plt.ylim([bic.min() * 1.01 - .01 * bic.max(), bic.max()])
     plt.title('BIC score per model')
-    xpos = np.mod(bic.argmin(), len(n_components_range)) + .65 +\
+    xpos = np.mod(bic.argmin(), len(n_components_range)) + .65 + \
         .2 * np.floor(bic.argmin() / len(n_components_range))
     plt.text(xpos, bic.min() * 0.97 + .03 * bic.max(), '*', fontsize=14)
     spl.set_xlabel('Number of components')
@@ -2178,7 +2489,7 @@ def mixtureModel():
     lossbycoordinates(test_means)
     
     Xdev = []
-    dev_means= []
+    dev_means = []
     n_samples = len(devUsers)
     for u in devUsers:
         locationStr = devUsers[u]
@@ -2197,14 +2508,14 @@ def dbn():
     createTrainDir(640)
     createTestDevDir('test')
     createTestDevDir('dev')
-    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names  = feature_extractor(encoding='latin1')
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1')
     '''
     We then configure a neural network with 300 hidden units, a learning rate of 0.3 and 
     a learning rate decay of 0.9, which is the number 
     that the learning rate will be multiplied with after each epoch.
     '''
     clf = DBN(
-    [X_train.shape[1],300, 25],
+    [X_train.shape[1], 300, 25],
     learn_rates=0.3,
     learn_rate_decays=0.9,
     epochs=10,
@@ -2221,7 +2532,7 @@ def pybi():
     createTrainDir(640)
     createTestDevDir('test')
     createTestDevDir('dev')
-    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names  = feature_extractor(encoding='latin1')
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1')
     from pybrain.datasets            import ClassificationDataSet
     from pybrain.utilities           import percentError
     from pybrain.tools.shortcuts     import buildNetwork
@@ -2235,16 +2546,16 @@ def pybi():
     n_test_samples = X_test.shape[0]
     dimension = X_train.shape[1]
     
-    #means = [(-1,0),(2,4),(3,1)]
-    #cov = [diag([1,1]), diag([0.5,1.2]), diag([1.5,0.7])]
-    trndata = ClassificationDataSet(dimension,1, nb_classes=len(categories))
-    tstdata = ClassificationDataSet(dimension,1, nb_classes=len(categories))
+    # means = [(-1,0),(2,4),(3,1)]
+    # cov = [diag([1,1]), diag([0.5,1.2]), diag([1.5,0.7])]
+    trndata = ClassificationDataSet(dimension, 1, nb_classes=len(categories))
+    tstdata = ClassificationDataSet(dimension, 1, nb_classes=len(categories))
     for i in range(0, n_train_samples):
         trndata.addSample(X_train[i].todense().tolist()[0], [Y_train[i]])
     for i in range(0, n_test_samples):
         tstdata.addSample(X_test[i].todense().tolist()[0], [Y_test[i]])
         
-    #alldata = ClassificationDataSet(2, 1, nb_classes=3)
+    # alldata = ClassificationDataSet(2, 1, nb_classes=3)
     '''
     for n in xrange(400):
         for klass in range(3):
@@ -2254,22 +2565,22 @@ def pybi():
     tstdata, trndata = alldata.splitWithProportion( 0.25 )
     '''
     print type(trndata)
-    trndata._convertToOneOfMany( )
-    tstdata._convertToOneOfMany( )
+    trndata._convertToOneOfMany()
+    tstdata._convertToOneOfMany()
     print "Number of training patterns: ", len(trndata)
     print "Input and output dimensions: ", trndata.indim, trndata.outdim
     print "First sample (input, target, class):"
     print trndata['input'][0], trndata['target'][0], trndata['class'][0]
-    fnn = buildNetwork( trndata.indim, 100, trndata.outdim, outclass=SoftmaxLayer )
-    trainer = BackpropTrainer( fnn, dataset=trndata, momentum=0.1, verbose=True, weightdecay=0.01)
+    fnn = buildNetwork(trndata.indim, 100, trndata.outdim, outclass=SoftmaxLayer)
+    trainer = BackpropTrainer(fnn, dataset=trndata, momentum=0.1, verbose=True, weightdecay=0.01)
 
 
     for i in range(20):
-        trainer.trainEpochs( 1 )
-        trnresult = percentError( trainer.testOnClassData(),
-                                  trndata['class'] )
-        tstresult = percentError( trainer.testOnClassData(
-               dataset=tstdata ), tstdata['class'] )
+        trainer.trainEpochs(1)
+        trnresult = percentError(trainer.testOnClassData(),
+                                  trndata['class'])
+        tstresult = percentError(trainer.testOnClassData(
+               dataset=tstdata), tstdata['class'])
     
         print "epoch: %4d" % trainer.totalepochs, \
               "  train error: %5.2f%%" % trnresult, \
@@ -2290,19 +2601,188 @@ def pybi():
         draw()  # update the plot
         ioff()
         show()
+
        '''
-def test_matrix():
-    y = np.ndarray(shape=(7,5), dtype=float)
-    print y
-test_matrix()
-#pybi()
-#dbn()
-#mixtureModel()
-#asclassification(640)
-sgd_optimization_mnist()
-#gd_optimization_mnist()
-#test_mlp()
-#print_class_coordinates()
+def dump_svm():
+    print "dumping matrices in svmlight format..."
+    create_directories(granularity=640, write=False)
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1')
+    # svmlight labels start from 1 not zero
+    for Y in (Y_train, Y_dev, Y_test):
+        print Y.shape
+        for i in range(0, Y.shape[0]):
+                Y[i] = Y[i] + 1
+    # dump_svmlight_file(X_train, Y_train, path.join(GEOTEXT_HOME, 'train.svmlight'))
+    # dump_svmlight_file(X_dev, Y_dev, path.join(GEOTEXT_HOME, 'dev.svmlight'))
+    # dump_svmlight_file(X_test, Y_test, path.join(GEOTEXT_HOME, 'test.svmlight'))
+    with codecs.open(path.join(GEOTEXT_HOME, 'costMatrix.svmlight'), 'w') as inf:
+        for i in range(0, costMatrix.shape[0]):
+            for j in range(0, costMatrix.shape[1]):
+                separator = ' '
+                if j == (costMatrix.shape[1] - 1):
+                    separator = '\n'
+                inf.write(str(int(costMatrix[i, j])).strip() + separator)
+def create_toy_cost_sensitive_data():
+    n_samples = 800
+    n_classes = 4
+    Xs = []
+    Ys = []
+    Ls = []
+    var = 1
+    X_train = np.ndarray(shape=(n_samples, 2))
+    Y_train = np.ndarray(shape=(n_samples, 1), dtype=int)
+    costM = np.ndarray(shape=(4, 4))
+    costM[0, 0] = 0
+    costM[0, 1] = 1
+    costM[0, 2] = 1
+    costM[0, 3] = 1
+    costM[1, 0] = 1
+    costM[1, 1] = 0
+    costM[1, 2] = 1
+    costM[1, 3] = 1
+    costM[2, 0] = 1
+    costM[2, 1] = 1
+    costM[2, 2] = 0
+    costM[2, 3] = 1
+    costM[3, 0] = 1
+    costM[3, 1] = 1
+    costM[3, 2] = 1
+    costM[3, 3] = 0
+    color_list = plt.cm.get_cmap()
+    
+    
+    cent = 2
+    centers = [[-cent, cent], [cent, cent], [-cent, -cent], [cent, -cent]]
+    colors = ['b', 'k', 'g', 'r']
+    
+    for c in range(0, n_classes):
+        for i in range(c * n_samples / n_classes, (c + 1) * n_samples / n_classes):
+            x1 = random.gauss(centers[c][0], var)
+            x2 = random.gauss(centers[c][1], var)
+            # x2 = 0
+            X_train[i, 0] = x1
+            X_train[i, 1] = x2
+            Xs.append(x1)
+            Ys.append(x2)
+            Y_train[i, 0] = c
+            Ls.append(c)
+
+    cmapname = "prism"
+    mrkr = ','
+    plt.subplot(6, 1, 1)
+    plt.title('Original train data')
+    plt.scatter(Xs, Ys, s=20, c=[colors[i] for i in Ls], marker='o', cmap=None, norm=None, vmin=None, vmax=None, alpha=None, linewidths=None, verts=None, hold=None)
+    # plt.show(block=False)
+    # X_train = normalize(X_train, norm='l2', axis=1, copy=True)
+    
+    
+    clf = SGDClassifier(loss='log')
+    clf.fit(X_train, Y_train)
+    preds = clf.predict(X_train)
+    preds1 = preds.tolist()
+    plt.subplot(6, 1, 2)
+    plt.title('SGD with log loss')
+    plt.scatter(Xs, Ys, s=20, c=[colors[i] for i in preds1], marker='o', cmap=None, norm=None, vmin=None, vmax=None, alpha=None, linewidths=None, verts=None, hold=None)
+
+    clf = SGDClassifier(loss='hinge')
+    # clf = LinearSVC(multi_class='ovr', class_weight='auto', C=1.0, loss='l2', penalty='l2', dual=True, tol=1e-3)
+    # clf = LogisticRegression(penalty='l2')
+    # clf = SGDClassifier(loss='log', learning_rate='optimal', n_iter=5)
+    # clf = RidgeClassifier(tol=1e-2, solver="auto")
+    # clf = RidgeClassifier(alpha=1.0, fit_intercept=True, normalize=False, copy_X=True, max_iter=None, tol=1e-2, class_weight=None, solver="auto")
+    # clf = SVC(C=1.0, kernel='poly', degree=3, gamma=0.0, coef0=0.0, shrinking=True, probability=False, tol=0.001, cache_size=200, class_weight=None, verbose=False, max_iter=-1, random_state=None)
+    # clf = Perceptron(n_iter=50)
+    # clf = PassiveAggressiveClassifier(n_iter=50)
+    # clf = KNeighborsClassifier(n_neighbors=10)
+    # clf = NearestCentroid()
+    # clf = MultinomialNB(alpha=.01)
+    clf.fit(X_train, Y_train)
+    preds = clf.predict(X_train)
+    preds11 = preds.tolist()
+    plt.subplot(6, 1, 3)
+    plt.title('SGD with hinge loss')
+    plt.scatter(Xs, Ys, s=20, c=[colors[i] for i in preds11], marker='o', cmap=None, norm=None, vmin=None, vmax=None, alpha=None, linewidths=None, verts=None, hold=None)
+    
+    Y_train = np.array(Ls)
+    preds2 = theano_fit_predict(X_train, Y_train, copy.deepcopy(X_train), copy.deepcopy(Y_train), costM=None)
+    plt.subplot(6, 1, 4)
+    plt.title('Theano SGD with log loss')
+    plt.scatter(Xs, Ys, s=20, c=[colors[i] for i in preds2], marker='o', cmap=None, norm=None, vmin=None, vmax=None, alpha=None, linewidths=None, verts=None, hold=None)
+
+    preds3 = theano_fit_predict(X_train, Y_train, copy.deepcopy(X_train), copy.deepcopy(Y_train), costM=costM)
+    plt.subplot(6, 1, 5)
+    plt.title('Theano SGD with cost sensitive learnning cost(i, j) = 1 for all i!=j')
+    plt.scatter(Xs, Ys, s=20, c=[colors[i] for i in preds3], marker='o', cmap=None, norm=None, vmin=None, vmax=None, alpha=None, linewidths=None, verts=None, hold=None)
+    # plt.text(10, 0,  str(costM))
+    
+    costM[1, 0] = 50
+    costM[0, 1] = 50
+    preds4 = theano_fit_predict(X_train, Y_train, copy.deepcopy(X_train), copy.deepcopy(Y_train), costM=costM)
+    plt.subplot(6, 1, 6)
+    plt.title('Theano SGD with cost sensitive learnning cost(0,1)=cost(1,0)=50 other misclassification costs = 1 for i!=j')
+    plt.scatter(Xs, Ys, s=20, c=[colors[i] for i in preds4], marker='o', cmap=None, norm=None, vmin=None, vmax=None, alpha=None, linewidths=None, verts=None, hold=None)
+    plt.text(10, 0, str(costM))
+    plt.show(block=True)
+
+def matrix_test():
+    a = np.random.rand(3, 2)
+    b = np.random.rand(3, 2)
+    b = b.min(axis=0)
+    #b.reshape((3, 1))
+    print a
+    print '-------------'
+    print b
+    print '-------------'
+    #print a * b
+    print '-------------'
+    #print np.sum(a * b , axis=1)
+    print '-------------'
+    print a / b
+def chart_me():
+    data = np.genfromtxt(path.join(GEOTEXT_HOME, 'cost-data/first-nll100or65-then-cost.txt'), dtype=float, delimiter=',')
+    markers = ['m-', 'g--', 'g-', 'c-', 'r-', 'b-', 'r--', 'b--']
+    labels = ['NLL cost', 'class cost', 'sample cost', 'error rate', 'mean', 'median', 'bayesian mean', 'bayesian median']
+    costFunction = '-T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y]) - T.mean(T.sum(self.p_y_given_x * T.log(self.p_y_given_x), axis=1))'
+    costFunction = 'Expected Class Cost: T.mean(T.sum(self.p_y_given_x * T.transpose(c[:, y]), axis=1))'
+    costFunction = 'NLL: -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])'
+    costFunction = 'Expected Sample Cost: T.mean(T.sum(self.p_y_given_x * sc, axis=1))'
+    costFunction = 'Start with NLL then go with expected class cot'
+    for i in range(1, data.shape[1]):
+        x = data[:, 0]
+        y = data[:, i]
+        magnificient = ''
+        if labels[i-1] in ['NLL cost']:
+            y = y * 100
+            magnificient = ' 100x'
+        if labels[i-1] in ['error rate']:
+            y = y * 100
+        
+        labels[i-1] = labels[i-1] + magnificient
+        minIndex = np.argmin(y)
+        plt.text(x[minIndex], y[minIndex], "min")
+        plt.title(costFunction)
+        plt.plot(x, y, markers[i-1], label=labels[i-1], linewidth=2)
+    legend = plt.legend(loc='upper right', shadow=False, fontsize='small')
+    #legend.get_frame().set_facecolor('#00FFCC')
+    plt.show(block=True)
+#chart_me()
+#sys.exit()
+initialize('latin')
+#matrix_test()
+#create_toy_cost_sensitive_data()
+# plt.scatter(Xs, Ys, s=20, c=Ls, marker='o', cmap=pb.cm.get_cmap('prism', lut=None), norm=None, vmin=None, vmax=None, alpha=None, linewidths=None, verts=None, hold=None)
+# plt.show(block=True)
+
+# plt.savefig(path.join(GEOTEXT_HOME, 'toy.png'))
+# dump_svm()            
+# pybi()
+# dbn()
+# mixtureModel()
+asclassification(640)
+#sgd_optimization_mnist(modelType='class')
+# gd_optimization_mnist()
+# test_mlp()
+# print_class_coordinates()
 '''
 wireless()
 

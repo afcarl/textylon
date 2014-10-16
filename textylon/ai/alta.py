@@ -4,10 +4,13 @@ import re
 import os
 import urllib2
 import nltk
+import sys
 from bs4 import BeautifulSoup
 from goose import Goose
+import string
+import unicodedata
 home = '/home/af/Downloads/alta/'
-option = 8
+option = 10
 
 if option==1:
     with codecs.open('train.txt', 'r', 'utf-8') as inf:
@@ -182,14 +185,113 @@ if option==8:
         for line in inf:
             #words = line.split()
             #dic.extend(words)
-            dic.append(line.strip().lower())
+            dic.append(line.strip())
     dic = set(dic)
+    with codecs.open(os.path.join(home, 'certainly detect these locations - compiled from geonames of au and nz.txt'), 'w', 'utf-8') as outf:
+        for i in dic:
+            outf.write(i+'\n')
+
+if option==9:
+    dic = []
+    with codecs.open(os.path.join(home, 'aunz.txt'), 'r', 'utf-8') as inf:
+        for line in inf:
+            words = line.split()
+            dic.extend(words)
+            #dic.append(line.strip())
+    c = Counter(dic)
+    sorted = c.most_common()
+    with codecs.open(os.path.join(home, 'needs manual harassing sorted by frequency ascending - compiled from geonames of au and nz.txt'), 'w', 'utf-8') as outf:
+        for i in sorted:
+            word , freq = i
+            outf.write(word + '\t' + str(freq).strip()+'\n')
+    
     text = ''
     with codecs.open(os.path.join(home, 'Test_Data.txt'), 'r', 'utf-8') as inf:
         text = inf.read()
-    words = text.split()
-    i = 1
-    for word in words:
-        if word in dic:
-            print word
-            
+    words = re.split(" |\||\n|\r|\t|#|/|\(|\)|\@|\'|\"|\!|\?",text)
+    words = [w.lower() for w in words]
+    words = set(words)
+    print words
+    
+    
+    sorted = c.most_common()
+    with codecs.open(os.path.join(home, 'just words in test collection - needs manual harassing sorted by frequency ascending - compiled from geonames of au and nz.txt'), 'w', 'utf-8') as outf:
+        for i in sorted:
+            word , freq = i
+            if word.lower() in words:
+                outf.write(word + '\t' + str(freq).strip()+'\n')
+
+if option==10:
+    print "Usage: python alta.py test-file result-file dictionary-file outputfile"
+    if len(sys.argv) != 5:
+        print "Fatal error: wrong number of arguments."
+        sys.exit()
+    pythonfilename, testfile, resultfile, dictionaryfile, outputfile = sys.argv
+    encoding = 'utf-8'
+    with codecs.open(testfile, 'r', encoding=encoding) as inf:
+        testLines = inf.readlines()
+    with codecs.open(resultfile, 'r', encoding=encoding) as inf:
+        resultLines = inf.readlines()
+    with codecs.open(dictionaryfile, 'r', encoding=encoding) as inf:
+        dictionaryLines = inf.readlines()
+    
+    testDataDic = {}
+    resultDic = {}
+    newResultDic = {}
+    gazetter = [line.lower().strip() for line in dictionaryLines]
+    
+    for line in testLines:
+        fields = line.split('|||')
+        #Felix's normalization translate doesn't work with unicode here
+        #fields[1] = fields[1].lower().translate(None, "#'\"@") 
+        if len(fields) < 2:
+            continue
+        fields[1] = fields[1].lower()
+        fields[1] = fields[1].replace('#','')
+        fields[1] = fields[1].replace('\"', '')
+        fields[1] = fields[1].replace('@', '')
+        testDataDic[fields[0]] = ' '.join(re.split("\W+", fields[1]))
+    
+    for line in resultLines:
+        fields = line.split(',')
+        resultDic[fields[0]] = fields[1].split()
+    newItemCount = 0
+    for tweetID in resultDic:
+        tweet_text = testDataDic[tweetID]
+        detected_locations = resultDic[tweetID] 
+        #order matters here
+        for dicItem in gazetter:
+            #check if it is in tweet_text
+            if dicItem in tweet_text:
+                #check if items are in results, if not add each token
+                tokens = dicItem.split()
+                for token in tokens:
+                    if token in detected_locations:
+                        continue
+                    else:
+                        textWords = tweet_text.split()
+                        for word in textWords:
+                            if token in word:
+                                if word in detected_locations:
+                                    pass
+                                else:
+                                    detected_locations.append(word)
+                                    newItemCount += 1  
+                            else:
+                                pass
+
+            else:
+                continue
+        newResultDic[tweetID] = detected_locations
+    
+    print "Detected " + str(newItemCount) + " new locations."
+    
+    #write the newResultDic to the outputfile
+    print "writing the final results in " + outputfile
+    with codecs.open(outputfile, 'w', encoding=encoding) as outf:
+        for tweetID in sorted(newResultDic):
+            locations = newResultDic[tweetID]
+            outf.write(tweetID + ',')
+            locStr = ' '.join(locations)
+            outf.write(locStr + '\n')
+    print "new result file is ready."
