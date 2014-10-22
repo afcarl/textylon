@@ -31,6 +31,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neighbors import NearestCentroid
 from sklearn.svm import LinearSVC, SVC
 from sklearn.utils.extmath import density
+import scipy.sparse as sparse
 from sklearn.neighbors import NearestNeighbors
 # from time import time
 from math import sqrt
@@ -74,7 +75,7 @@ import gzip
 import os
 import sys
 import time
-
+import pickle
 import numpy
 
 import theano
@@ -749,7 +750,24 @@ def evaluate(preds, U_test, categories, scores):
     # print "Average median distance is " + str(averageMedianDistance)
     print "Mean distance is " + str(mean(distances))
     print "Median distance is " + str(median(distances))
+def dataSpaceExpansion(X_train, Y_train, k=1):
+    print "started data space expansion with factor: " + str(k)
+    n_samples = X_train.shape[0]
+    n_classes = len(categories)
+    neighbors = trainCostMatrix.argsort()[:, 0:k]
 
+    expanded_X_train = sparse.vstack([X_train, X_train])
+    expanded_Y_train = np.hstack((Y_train, Y_train))
+    for i in range(0, n_samples):
+        user = U_train[i]
+        locationStr = trainUsers[user]
+        lat, lon = locationStr2Float(locationStr)
+        sample_neighbors = neighbors[i].tolist()
+        expanded_Y_train[i] = sample_neighbors[0]
+            
+    return expanded_X_train, expanded_Y_train
+        
+        
 def loss(preds, U_test, loss='median'):
     if len(preds) != len(testUsers): 
         print "The number of test sample predictions is: " + str(len(preds))
@@ -896,7 +914,7 @@ def feature_extractor(encoding='utf-8'):
    
     print("Extracting features from the training dataset using a sparse vectorizer")
     t0 = time.time()
-    vectorizer = TfidfVectorizer(use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=2, max_df=1.0, ngram_range=(1, 1), stop_words='english')
+    vectorizer = TfidfVectorizer(use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=10, max_df=1.0, ngram_range=(1, 1), stop_words='english')
     X_train = vectorizer.fit_transform(data_train.data)
     '''
     #test the sum of a doc feature values
@@ -938,10 +956,10 @@ def feature_extractor(encoding='utf-8'):
         ppmiTransform(X_test)
     
             
-    chi = True
+    chi = False
     if chi:
         k = 20000
-        print("Extracting %d best features by a chi-squared test" % 0)
+        print("Extracting %d best features by a chi-squared test" % k)
         t0 = time.time()
         ch2 = SelectKBest(chi2, k=k)
         X_train = ch2.fit_transform(X_train, Y_train)
@@ -952,41 +970,52 @@ def feature_extractor(encoding='utf-8'):
         # feature_names = np.asarray(vectorizer.get_feature_names())
     feature_names = np.asarray(vectorizer.get_feature_names())
     
-    print "building cost matrix..."
-    costMatrix = np.ndarray(shape=(len(classLatMedian), len(classLatMedian)), dtype=float)
-    for i in range(0, len(categories)):
-        lat = classLatMedian[str(i)]
-        lon = classLonMedian[str(categories[i])]
-        for j in classLatMedian:
-            lat2 = classLatMedian[j]
-            lon2 = classLonMedian[j]
-            cost = distance(lat, lon, lat2, lon2)
-            costMatrix[i, j] = cost
-    
-    print "building sample based cost matrix..."
-    trainCostMatrix = np.ndarray(shape=(X_train.shape[0], len(categories)), dtype=float)
-    for i in range(0, trainCostMatrix.shape[0]):
-        lat, lon = locationStr2Float(trainUsers[U_train[i]])
-        for j in range(0, trainCostMatrix.shape[1]):
-            lat2 = classLatMedian[str(j)]
-            lon2 = classLonMedian[str(j)]
-            trainCostMatrix[i, j] = distance(lat, lon, lat2, lon2)
-    
-    devCostMatrix = np.ndarray(shape=(X_dev.shape[0], len(categories)), dtype=float)
-    for i in range(0, devCostMatrix.shape[0]):
-        lat, lon = locationStr2Float(devUsers[U_dev[i]])
-        for j in range(0, devCostMatrix.shape[1]):
-            lat2 = classLatMedian[str(j)]
-            lon2 = classLonMedian[str(j)]
-            devCostMatrix[i, j] = distance(lat, lon, lat2, lon2)        
-    
-    testCostMatrix = np.ndarray(shape=(X_test.shape[0], len(categories)), dtype=float)
-    for i in range(0, testCostMatrix.shape[0]):
-        lat, lon = locationStr2Float(testUsers[U_test[i]])
-        for j in range(0, testCostMatrix.shape[1]):
-            lat2 = classLatMedian[str(j)]
-            lon2 = classLonMedian[str(j)]
-            testCostMatrix[i, j] = distance(lat, lon, lat2, lon2)  
+    DO_SVD = False
+    Reduction_D = 1000
+    if DO_SVD:
+        print("dimension reduction svd with d=%d" % Reduction_D)
+        svd = TruncatedSVD(n_components=Reduction_D, algorithm="randomized", n_iterations=5, random_state=None, tol=0)
+        X_train = svd.fit_transform(X_train)
+        X_test = svd.transform(X_test)
+        X_dev = svd.transform(X_dev)
+        print("dimension reduction finished.")
+    BuildCostMatrices = True
+    if BuildCostMatrices:
+        print "building cost matrix..."
+        costMatrix = np.ndarray(shape=(len(classLatMedian), len(classLatMedian)), dtype=float)
+        for i in range(0, len(categories)):
+            lat = classLatMedian[str(i)]
+            lon = classLonMedian[str(categories[i])]
+            for j in classLatMedian:
+                lat2 = classLatMedian[j]
+                lon2 = classLonMedian[j]
+                cost = distance(lat, lon, lat2, lon2)
+                costMatrix[i, j] = cost
+        
+        print "building sample based cost matrix..."
+        trainCostMatrix = np.ndarray(shape=(X_train.shape[0], len(categories)), dtype=float)
+        for i in range(0, trainCostMatrix.shape[0]):
+            lat, lon = locationStr2Float(trainUsers[U_train[i]])
+            for j in range(0, trainCostMatrix.shape[1]):
+                lat2 = classLatMedian[str(j)]
+                lon2 = classLonMedian[str(j)]
+                trainCostMatrix[i, j] = distance(lat, lon, lat2, lon2)
+        
+        devCostMatrix = np.ndarray(shape=(X_dev.shape[0], len(categories)), dtype=float)
+        for i in range(0, devCostMatrix.shape[0]):
+            lat, lon = locationStr2Float(devUsers[U_dev[i]])
+            for j in range(0, devCostMatrix.shape[1]):
+                lat2 = classLatMedian[str(j)]
+                lon2 = classLonMedian[str(j)]
+                devCostMatrix[i, j] = distance(lat, lon, lat2, lon2)        
+        
+        testCostMatrix = np.ndarray(shape=(X_test.shape[0], len(categories)), dtype=float)
+        for i in range(0, testCostMatrix.shape[0]):
+            lat, lon = locationStr2Float(testUsers[U_test[i]])
+            for j in range(0, testCostMatrix.shape[1]):
+                lat2 = classLatMedian[str(j)]
+                lon2 = classLonMedian[str(j)]
+                testCostMatrix[i, j] = distance(lat, lon, lat2, lon2)  
             
     return X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names
     
@@ -1017,13 +1046,15 @@ def abod(probs, preds, U_test):
     
 def classify(granularity=10):
     X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1')
-
-    #clf = LinearSVC(multi_class='ovr', class_weight='auto', C=1.0, loss='l2', penalty='l2', dual=True, tol=1e-3)
+    DSExpansion = False
+    if DSExpansion:
+        X_train, Y_train = dataSpaceExpansion(X_train, Y_train)
+    clf = LinearSVC(multi_class='ovr', class_weight='auto', C=1.0, loss='l2', penalty='l2', dual=True, tol=1e-3)
     #clf = LogisticRegression(penalty='l2')
     #clf = SGDClassifier(loss='log', learning_rate='optimal', n_iter=5)
     #clf = RidgeClassifier(tol=1e-2, solver="auto")
     #clf = RidgeClassifier(alpha=1.0, fit_intercept=True, normalize=False, copy_X=True, max_iter=None, tol=1e-2, class_weight=None, solver="auto")
-    clf = SVC(C=1.0, kernel='rbf', degree=3, gamma=0.0, coef0=0.0, shrinking=True, probability=False, tol=0.001, cache_size=200, class_weight=None, verbose=False, max_iter=-1, random_state=None)
+    #clf = SVC(C=1.0, kernel='rbf', degree=3, gamma=0.0, coef0=0.0, shrinking=True, probability=False, tol=0.001, cache_size=200, class_weight=None, verbose=False, max_iter=-1, random_state=None)
     #clf = Perceptron(n_iter=50)
     #clf = PassiveAggressiveClassifier(n_iter=50)
     #clf = KNeighborsClassifier(n_neighbors=10)
@@ -1094,7 +1125,7 @@ def classify(granularity=10):
    
 # classify()
 
-def loadGPData(DO_SVD=True, Reduction_D=100):
+def loadGPData(DO_SVD=False, Reduction_D=100):
     data = {}
     
     trainlats = []
@@ -1107,7 +1138,10 @@ def loadGPData(DO_SVD=True, Reduction_D=100):
     testtexts = []
     testlocs = []
     
-    for user in trainUsers:
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1')
+    
+    for i in range(0, len(U_train)):
+        user = U_train[i]
         loc = trainUsers[user]
         latlon = loc.split(',')
         lat = float(latlon[0])
@@ -1118,7 +1152,8 @@ def loadGPData(DO_SVD=True, Reduction_D=100):
         traintexts.append(text)
         trainlocs.append([lat, lon])
 
-    for user in testUsers:
+    for i in range(0, len(U_test)):
+        user = U_test[i]
         loc = testUsers[user]
         latlon = loc.split(',')
         lat = float(latlon[0])
@@ -1130,21 +1165,18 @@ def loadGPData(DO_SVD=True, Reduction_D=100):
         testlocs.append([lat, lon])
 
     
-    vectorizer = TfidfVectorizer(use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=10, max_df=1.0, ngram_range=(1, 1), stop_words='english')
-    
-    print 'vectorizing train and test data...'
-    X_train = vectorizer.fit_transform(traintexts)
-    print("X_train: n_samples: %d, n_features: %d" % X_train.shape)
-    X_test = vectorizer.transform(testtexts)
-    print("X_test: n_samples: %d, n_features: %d" % X_test.shape)
     
     if DO_SVD:
         print("dimension reduction svd with d=%d" % Reduction_D)
         svd = TruncatedSVD(n_components=Reduction_D, algorithm="randomized", n_iterations=5, random_state=None, tol=0)
         X_train = svd.fit_transform(X_train)
         X_test = svd.transform(X_test)
+        X_dev = svd.transform(X_dev)
         print("dimension reduction finished.")
-        
+    else:
+        X_train = X_train.toarray()
+        X_test = X_test.toarray()
+        X_dev = X_dev.toarray() 
     Y_train = np.asanyarray(trainlocs)
     print("Y_train: n_samples: %d, n_features: %d" % Y_train.shape)
     Y_test = np.asanyarray(testlocs) 
@@ -1165,7 +1197,8 @@ def loadGPData(DO_SVD=True, Reduction_D=100):
     
 def localizeGP(max_iters=100, kernel=None, optimize=True, plot=False):
     """Predict the location of a robot given wirelss signal strength readings."""
-    data = loadGPData()
+    DO_SVD = False
+    data = loadGPData(DO_SVD)
     # data = GPy.util.datasets.robot_wireless()
     print data
     # create simple GP Model
@@ -1175,7 +1208,12 @@ def localizeGP(max_iters=100, kernel=None, optimize=True, plot=False):
     if optimize:
         m.optimize(messages=True, max_iters=max_iters)
 
-    Xpredict = m.predict(data['Ytest'])[0]
+    results = m.predict(data['Ytest'])
+    print len(results)
+    Xpredict = results[0]
+    Xvar = results[1]
+
+    
     if plot:
         pb.plot(data['Xtest'][:, 0], data['Xtest'][:, 1], 'r-')
         pb.plot(Xpredict[:, 0], Xpredict[:, 1], 'b-')
@@ -1184,17 +1222,22 @@ def localizeGP(max_iters=100, kernel=None, optimize=True, plot=False):
         pb.legend(('True Location', 'Predicted Location'))
         
     sumDist = 0
+    distances = []
     for i in range(0, Xpredict.shape[0]):
         lat1 = Xpredict[i][0]
         lon1 = Xpredict[i][1]
         lat2 = data['Xtest'][i][0]
         lon2 = data['Xtest'][i][1]
-        sumDist += distance(lat1, lon1, lat2, lon2)
-    averageDist = float(sumDist) / Xpredict.shape[0]
-    print "average distance is: " + str(averageDist)
+        distances.append(distance(lat1, lon1, lat2, lon2))
+
+    print "mean distance is: " + str(mean(distances))
+    print "median distance is: " + str(median(distances))
+    with open('GP_results-'+ str(DO_SVD) + ".pkl", 'wb') as outf:
+        pickle.dump((Xpredict, Xvar), outf )
+    
     # sse = ((data['Xtest'] - Xpredict)**2).sum()
     # aae = np.absolute(data['Xtest'] - Xpredict).sum()
-    print m
+    #print m
     # print('Sum of squares error on test data: ' + str(sse))
     # print('average absolute error on test data: ' + str(aae))
     if plot:
@@ -1270,7 +1313,7 @@ def finalUserTextFile(home):
     with codecs.open(fname, 'w', 'latin1') as inf:
         pass
         # TODO
-def initialize(encoding='latin'):    
+def initialize(encoding='latin', granularity=640):    
     readGeoTextRecords(encoding=encoding)
     print 'reading train, dev and test file and building trainUsers, devUsers and testUsers with their locations'
     users(trainfile, 'train', encoding=encoding)
@@ -1278,10 +1321,10 @@ def initialize(encoding='latin'):
     users(testfile, 'test', encoding=encoding)
     print 'total ' + str(len(userLocation)).strip() + " users."
     fillUserByLocation()
-    fillTextByUser(encoding=encoding)            
+    fillTextByUser(encoding=encoding)
+    create_directories(granularity, write=False)            
 
 def asclassification(granularity=10):    
-    create_directories(granularity, write=False)
     classify(granularity)
     partitionLocView(granularity)
 
@@ -2778,16 +2821,16 @@ initialize('latin')
 # pybi()
 # dbn()
 # mixtureModel()
-asclassification(640)
+#asclassification(granularity=640)
+
 #sgd_optimization_mnist(modelType='class')
 # gd_optimization_mnist()
 # test_mlp()
 # print_class_coordinates()
-'''
-wireless()
+
+#wireless()
 
 #loatGeolocationDataset()
 localizeGP()
 #wirelessSGD()
 
-'''
