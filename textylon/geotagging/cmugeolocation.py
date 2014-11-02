@@ -7,6 +7,7 @@ import codecs
 import matplotlib as mpl
 import shutil
 import os
+import re
 import itertools
 from scipy import linalg
 from sklearn import mixture
@@ -15,12 +16,14 @@ from math import radians, cos, sin, asin, sqrt
 from sklearn import cross_validation
 from sklearn import metrics
 from  sklearn.datasets import load_files
+from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.preprocessing import normalize
 from sklearn.decomposition import PCA, TruncatedSVD, NMF, SparsePCA
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.feature_selection import SelectKBest, chi2
 from sklearn.linear_model import PassiveAggressiveClassifier
+from sklearn import linear_model
 from sklearn.linear_model import Perceptron
 from sklearn.datasets import dump_svmlight_file
 from sklearn.linear_model import RidgeClassifier
@@ -30,9 +33,11 @@ from sklearn.naive_bayes import BernoulliNB, MultinomialNB
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neighbors import NearestCentroid
 from sklearn.svm import LinearSVC, SVC
+from IPython.core.debugger import Tracer
 from sklearn.utils.extmath import density
 import scipy.sparse as sparse
 from sklearn.neighbors import NearestNeighbors
+#from extract import get_tokens
 # from time import time
 from math import sqrt
 import numpy as np
@@ -51,12 +56,13 @@ import matplotlib.ticker as ticker
 import pylab as pb
 from theano.tensor.basic import dmatrix
 from nltk.classify.naivebayes import NaiveBayesClassifier
+from sklearn.linear_model.coordinate_descent import MultiTaskLasso, ElasticNet
+from scipy.spatial.distance import pdist
 pb.ion()
 from GPy.core.gp import GP
 import csv
 from GPy.examples import regression
 from sklearn.linear_model.sgd_fast import Log
-
 import numpy as np
 import GPy
 from GPy import kern, likelihoods
@@ -115,6 +121,7 @@ userText = {}
 devClasses = {}
 testClasses = {}
 categories = []
+mentions = []
 
 costMatrix = None
 trainCostMatrix = None
@@ -130,7 +137,19 @@ Y_test = None
 U_train = None
 U_dev = None
 U_test = None
-
+'''
+def normalizeText(encoding = 'latin'):
+    with codecs.open(path.join(GEOTEXT_HOME, 'full_text.txt'), 'r', encoding=encoding) as inf:
+        errorNum = 0
+        with codecs.open(path.join(GEOTEXT_HOME, 'full_text_normalized.txt'), 'w', encoding=encoding) as outf:
+            for line in inf:
+                flds = line.split('\t')
+                if len(flds) < 6:
+                    errorNum += 1
+                    continue
+                outf.write(flds[0] + '\t' + flds[1] + '\t' + flds[2] + '\t' + flds[3] + '\t' + flds[4] + '\t' + ' '.join(get_tokens(flds[5])) + '\n')
+    print "format error" + str(errorNum)
+'''          
 
 def readGeoTextRecords(encoding='utf-8'):
     global records
@@ -436,10 +455,10 @@ def merge_text():
 
 
 
-def partitionLocView(granularity=10):
+def partitionLocView(granularity, partitionMethod):
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    filename = '/home/af/Downloads/GeoText.2010-10-12/processed_data/' + str(granularity).strip() + '_clustered.train'
+    filename = '/home/af/Downloads/GeoText.2010-10-12/processed_data/' + str(granularity).strip() + '_' + partitionMethod + '_clustered.train'
     allpoints = []
     allpointsMinLat = []
     allpointsMaxLat = []
@@ -511,9 +530,10 @@ def partitionLocView(granularity=10):
     # ax.yaxis.set_major_locator(ticker.MultipleLocator(20)) # (MultipleLocator(20)) 
     plt.xlabel('Longitude')
     plt.ylabel('Latitude')
-    plt.title('US Map of Twitter Users mean of min & max ' + str(granularity).strip() + ' person per cluster')
+    plt.title('US Map of Twitter Users partitioned by ' + partitionMethod + ' method: ' + str(granularity).strip() + ' person per cluster')
     plt.savefig(filename + '.jpg')
-    plt.show()  # pylab.show()            
+    plt.close()
+    #plt.show()  # pylab.show()            
 
 
 
@@ -521,7 +541,7 @@ def partitionLocView(granularity=10):
 
 
 
-def createTrainDir(granularity=10, create_dir=False):
+def createTrainDir(granularity, partitionMethod, create_dir=False ):
     # readlocationclusters
     global classLatMean
     global classLatMedian
@@ -529,7 +549,7 @@ def createTrainDir(granularity=10, create_dir=False):
     global classLonMedian
     global testClasses
     global devClasses
-    filename = path.join(GEOTEXT_HOME, 'processed_data/' + str(granularity).strip() + '_clustered.train')
+    filename = path.join(GEOTEXT_HOME, 'processed_data/' + str(granularity).strip() + '_' + partitionMethod + '_clustered.train')
     allpoints = []
     allpointsMinLat = []
     allpointsMaxLat = []
@@ -686,8 +706,8 @@ def createTestDevDir(type='test'):
             inf.write(text)
 # createTestDevDir('test')
 # createTestDevDir('dev')
-def create_directories(granularity, write=False):
-    createTrainDir(granularity, write)
+def create_directories(granularity, partitionMethod, write=False):
+    createTrainDir(granularity, partitionMethod, write)
     if write:
         createTestDevDir(type='dev')
         createTestDevDir(type='test')
@@ -766,7 +786,21 @@ def dataSpaceExpansion(X_train, Y_train, k=1):
         expanded_Y_train[i] = sample_neighbors[0]
             
     return expanded_X_train, expanded_Y_train
-        
+def dataSpaceModification(Y_train, U_train):
+    for i in range(0, Y_train.shape[0]):
+        lat1, lon1 = locationStr2Float(trainUsers[U_train[i]])
+        dmin = 100000
+        cmin = -1
+        for c in range(0, len(categories)):
+            lat2 = classLatMedian[categories[c]]
+            lon2 = classLonMedian[categories[c]]
+            d = distance(lat1, lon1, lat2, lon2)
+            if d < dmin:
+                cmin = c
+                dmin = d
+        Y_train[i] = cmin
+    return Y_train
+            
         
 def loss(preds, U_test, loss='median'):
     if len(preds) != len(testUsers): 
@@ -854,7 +888,7 @@ def ppmiTransform(matrix):
         else:
             matrix[row, col] = 0.0
     print "PPMI transform finished successfully."    
-def feature_extractor(encoding='utf-8'):
+def feature_extractor(encoding='utf-8', use_mention_dictionary=False, use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=2, BuildCostMatrices=True, vectorizer=None):
     '''
     read train, dev and test directories and extract textual features using tfidfvectorizer.
     '''
@@ -914,7 +948,13 @@ def feature_extractor(encoding='utf-8'):
    
     print("Extracting features from the training dataset using a sparse vectorizer")
     t0 = time.time()
-    vectorizer = TfidfVectorizer(use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=10, max_df=1.0, ngram_range=(1, 1), stop_words='english')
+    
+    if vectorizer==None:    
+        if use_mention_dictionary:
+            vectorizer = TfidfVectorizer(use_idf=True, norm='l2', binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=1.0, ngram_range=(1, 1), stop_words='english', vocabulary=mentions)
+        else:
+            vectorizer = TfidfVectorizer(use_idf=True, norm='l2', binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=1.0, ngram_range=(1, 1), stop_words='english')
+    
     X_train = vectorizer.fit_transform(data_train.data)
     '''
     #test the sum of a doc feature values
@@ -1044,14 +1084,22 @@ def abod(probs, preds, U_test):
     return loss(preds2, U_test)
     
     
-def classify(granularity=10):
-    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1')
-    DSExpansion = False
+def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity=10, DSExpansion=False, DSModification=False):
+    
     if DSExpansion:
         X_train, Y_train = dataSpaceExpansion(X_train, Y_train)
-    clf = LinearSVC(multi_class='ovr', class_weight='auto', C=1.0, loss='l2', penalty='l2', dual=True, tol=1e-3)
-    #clf = LogisticRegression(penalty='l2')
-    #clf = SGDClassifier(loss='log', learning_rate='optimal', n_iter=5)
+    
+    if DSModification:
+        Y_train = dataSpaceModification(Y_train, U_train)
+    #clf = LinearSVC(multi_class='ovr', class_weight='auto', C=1.0, loss='l2', penalty='l1', dual=False, tol=1e-3)
+    #clf = linear_model.LogisticRegression(C=10.0, penalty='l2')
+    clf = SGDClassifier(loss='huber', learning_rate='optimal', n_iter=10, shuffle=False, n_jobs=20)
+    #clf = MultiTaskLasso()
+    #clf = ElasticNet()
+    #clf = linear_model.Lasso(alpha = 0.1)
+    
+    #clf = SGDClassifier(loss, penalty, alpha, l1_ratio, fit_intercept, n_iter, shuffle, verbose, epsilon, n_jobs, random_state, learning_rate, eta0, power_t, class_weight, warm_start, rho, seed)
+    #clf = linear_model.MultiTaskLasso(alpha=0.1)
     #clf = RidgeClassifier(tol=1e-2, solver="auto")
     #clf = RidgeClassifier(alpha=1.0, fit_intercept=True, normalize=False, copy_X=True, max_iter=None, tol=1e-2, class_weight=None, solver="auto")
     #clf = SVC(C=1.0, kernel='rbf', degree=3, gamma=0.0, coef0=0.0, shrinking=True, probability=False, tol=0.001, cache_size=200, class_weight=None, verbose=False, max_iter=-1, random_state=None)
@@ -1069,59 +1117,73 @@ def classify(granularity=10):
     clf.fit(X_train, Y_train)
     train_time = time.time() - t0
     print("train time: %0.3fs" % train_time)
+    
+    report_verbose = True
+    
 
-    print '**********dev************'
     devPreds = clf.predict(X_dev)
-    print("classification report:")
-    print(metrics.classification_report(Y_dev, devPreds, target_names=categories))
-    print("confusion matrix:")
-    print(metrics.confusion_matrix(Y_dev, devPreds))
-    score = metrics.f1_score(Y_dev, devPreds)
-    print("f1-score:   %0.3f" % score)
-    score = metrics.accuracy_score(Y_dev, devPreds)
-    print("Accuracy score:   %0.3f" % score)
+    #score1 = None
+    #Score2 = None
+    score1 = metrics.f1_score(Y_dev, devPreds)
+
+    score2 = metrics.accuracy_score(Y_dev, devPreds)
     
-    if hasattr(clf, 'coef_'):
-        print("dimensionality: %d" % clf.coef_.shape[1])
-        print("density: %f" % density(clf.coef_))
-        print("top 10 keywords per class:")
-        for i, category in enumerate(categories):
-            top10 = np.argsort(clf.coef_[i])[-10:]
-            print("%s: %s" % (category, " ".join(feature_names[top10])))
-    loss(devPreds, U_dev)
+    if report_verbose:
+        print '**********dev************'
+        print("classification report:")
+        print(metrics.classification_report(Y_dev, devPreds, target_names=categories))
+        print("confusion matrix:")
+        print(metrics.confusion_matrix(Y_dev, devPreds))
+        print("f1-score:   %0.3f" % score1)
+        print("Accuracy score:   %0.3f" % score2)
+        if hasattr(clf, 'coef_'):
+            print("dimensionality: %d" % clf.coef_.shape[1])
+            print("density: %f" % density(clf.coef_))
+            print("top 10 keywords per class:")
+            for i, category in enumerate(categories):
+                top10 = np.argsort(clf.coef_[i])[-10:]
+                print("%s: %s" % (category, " ".join(feature_names[top10])))
+
+    #loss(devPreds, U_dev)
     
     
-    print "************test*************"    
+        
     t0 = time.time()
     preds = clf.predict(X_test)
     # scores = clf.decision_function(X_test)
     #probs = clf.predict_proba(X_test)
+    probs = None
     # print preds.shape
     test_time = time.time() - t0
-    print("test time:  %0.3fs" % test_time)
     
-    print("classification report:")
-    print(metrics.classification_report(Y_test, preds, target_names=categories))
-    print("confusion matrix:")
-    print(metrics.confusion_matrix(Y_test, preds))
-    score = metrics.f1_score(Y_test, preds)
-    print("f1-score:   %0.3f" % score)
-    score = metrics.accuracy_score(Y_test, preds)
-    print("Accuracy score:   %0.3f" % score)
     
-    if hasattr(clf, 'coef_'):
-        print("dimensionality: %d" % clf.coef_.shape[1])
-        print("density: %f" % density(clf.coef_))
-        print("top 10 keywords per class:")
-        for i, category in enumerate(categories):
-            top10 = np.argsort(clf.coef_[i])[-10:]
-            print("%s: %s" % (category, " ".join(feature_names[top10])))
-    loss(preds, U_test)
-    print "development data"
-    loss(devPreds, U_dev)
+    
+    #score1 = metrics.f1_score(Y_test, preds)
+    #score2 = metrics.accuracy_score(Y_test, preds)
+    if report_verbose:
+        print "************test*************"
+        print("test time:  %0.3fs" % test_time)
+        print("classification report:")
+        print(metrics.classification_report(Y_test, preds, target_names=categories))
+        print("confusion matrix:")
+        print(metrics.confusion_matrix(Y_test, preds))
+        print("f1-score:   %0.3f" % score1)
+        print("Accuracy score:   %0.3f" % score2)
+        if hasattr(clf, 'coef_'):
+            print("dimensionality: %d" % clf.coef_.shape[1])
+            print("density: %f" % density(clf.coef_))
+            print("top 10 keywords per class:")
+            for i, category in enumerate(categories):
+                top10 = np.argsort(clf.coef_[i])[-10:]
+                print("%s: %s" % (category, " ".join(feature_names[top10])))
+    print "test results"
+    meanTest, medianTest = loss(preds, U_test)
+    print "development results"
+    meanDev, medianDev = loss(devPreds, U_dev)
     # loss(preds)
     # evaluate(preds,U_test, categories, None)
     #abod(probs, preds, U_test)
+    return preds, probs, U_test, meanTest, medianTest, meanDev, medianDev
    
 # classify()
 
@@ -1195,25 +1257,29 @@ def loadGPData(DO_SVD=False, Reduction_D=100):
         
     
     
-def localizeGP(max_iters=100, kernel=None, optimize=True, plot=False):
+def localizeGP(max_iters=100, kernel=None, optimize=False, plot=False):
     """Predict the location of a robot given wirelss signal strength readings."""
-    DO_SVD = False
-    data = loadGPData(DO_SVD)
+        
     # data = GPy.util.datasets.robot_wireless()
+    data = loadGPData()
     print data
     # create simple GP Model
-    m = GPy.models.GPRegression(data['Y'], data['X'], kernel=kernel)
+    m = GPy.models.GPRegression(data['Y'][:100], data['X'][:100], kernel=kernel)
 
+    #globals().update(locals())
+
+    
     # optimize
     if optimize:
         m.optimize(messages=True, max_iters=max_iters)
 
-    results = m.predict(data['Ytest'])
+    results = m.predict(data['Ytest'], full_cov=True)
     print len(results)
     Xpredict = results[0]
     Xvar = results[1]
-
     
+
+    Tracer()()
     if plot:
         pb.plot(data['Xtest'][:, 0], data['Xtest'][:, 1], 'r-')
         pb.plot(Xpredict[:, 0], Xpredict[:, 1], 'b-')
@@ -1232,7 +1298,7 @@ def localizeGP(max_iters=100, kernel=None, optimize=True, plot=False):
 
     print "mean distance is: " + str(mean(distances))
     print "median distance is: " + str(median(distances))
-    with open('GP_results-'+ str(DO_SVD) + ".pkl", 'wb') as outf:
+    with open('GP_results-'+ ".pkl", 'wb') as outf:
         pickle.dump((Xpredict, Xvar), outf )
     
     # sse = ((data['Xtest'] - Xpredict)**2).sum()
@@ -1257,15 +1323,14 @@ def wireless(max_iters=100, kernel=None, optimize=True, plot=True):
     if optimize:
         m.optimize(messages=True, max_iters=max_iters)
 
-    Xpredict = m.predict(data['Ytest'])[0]
+    Xpredict, Xvar, Xlow, Xhigh = m.predict(data['Ytest'])
     if plot:
         pb.plot(data['Xtest'][:, 0], data['Xtest'][:, 1], 'r-')
         pb.plot(Xpredict[:, 0], Xpredict[:, 1], 'b-')
         pb.axis('equal')
         pb.title('WiFi Localization with Gaussian Processes')
         pb.legend(('True Location', 'Predicted Location'))
-        
-
+      
     # sse = ((data['Xtest'] - Xpredict)**2).sum()
     aae = np.absolute(data['Xtest'] - Xpredict).sum()
     print m
@@ -1313,7 +1378,52 @@ def finalUserTextFile(home):
     with codecs.open(fname, 'w', 'latin1') as inf:
         pass
         # TODO
-def initialize(encoding='latin', granularity=640):    
+def initialize(partitionMethod, granularity, encoding='latin', write=False):    
+    global records
+    global lngs
+    global ltts
+    global keys
+    global userFirstTime
+    global userLocation
+    global locationUser
+    global userlon
+    global userlat
+    global testUsers
+    global devUsers
+    global trainUsers
+    global classLatMedian
+    global classLatMean
+    global classLonMedian
+    global classLonMean
+    global userText
+    global devClasses
+    global testClasses
+    global categories
+
+
+    records = []
+    lngs = []
+    ltts = []
+    pointText = {}
+    keys = []
+    userFirstTime = {}
+    userLocation = {}
+    locationUser = {}
+    userlat = {}
+    userlon = {}
+    testUsers = {}
+    trainUsers = {}
+    devUsers = {}
+    classLatMedian = {}
+    classLonMedian = {}
+    classLatMean = {}
+    classLonMean = {}
+    userText = {}
+    devClasses = {}
+    testClasses = {}
+    categories = []
+    
+
     readGeoTextRecords(encoding=encoding)
     print 'reading train, dev and test file and building trainUsers, devUsers and testUsers with their locations'
     users(trainfile, 'train', encoding=encoding)
@@ -1322,11 +1432,15 @@ def initialize(encoding='latin', granularity=640):
     print 'total ' + str(len(userLocation)).strip() + " users."
     fillUserByLocation()
     fillTextByUser(encoding=encoding)
-    create_directories(granularity, write=False)            
+    create_directories(granularity,partitionMethod, write)  
+    extract_mentions()          
 
-def asclassification(granularity=10):    
-    classify(granularity)
-    partitionLocView(granularity)
+def asclassification(granularity, partitionMethod):
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1')    
+    preds, probs, U_test, meanTest, medianTest, meanDev, medianDev = classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity)
+    if len(sys.argv)==1 or sys.argv[1] != 'server':
+        partitionLocView(granularity=granularity, partitionMethod=partitionMethod)
+    return preds, probs, U_test, meanTest, medianTest, meanDev, medianDev
 
 class LogisticRegression(object):
     """Multi-class Logistic Regression Class
@@ -1374,7 +1488,9 @@ class LogisticRegression(object):
 
         # parameters of the model
         self.params = [self.W, self.b]
-
+        self.A = T.transpose(self.W)
+        self.squared_euclidean_distances = (self.A ** 2).sum(1).reshape((self.A.shape[0], 1)) + (self.A ** 2).sum(1).reshape((1, self.A.shape[0])) - 2 * self.A.dot(self.A.T)
+        
     def negative_log_likelihood(self, y):
         """Return the mean of the negative log-likelihood of the prediction
         of this model under a given target distribution.
@@ -1405,10 +1521,15 @@ class LogisticRegression(object):
         # print T.diag(T.dot(self.p_y_given_x[T.arange(y.shape[0]), 0:24], c[0:24, y]))
         
         #1 main
-        return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        #return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
         #2 entropy nll + entropy
         #return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y]) - T.mean(T.sum(self.p_y_given_x * T.log(self.p_y_given_x), axis=1))
-        
+        #3 nll + regularization
+        #return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y]) + 0.0001 * T.sum(self.W**2)
+        #4 least square error
+        #return T.mean(T.sqr(1 - self.p_y_given_x[T.arange(y.shape[0]), y]))
+        #5 nnl + l1regul
+        return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y]) + 0.001 * T.sum(T.abs_(self.W))
     def example_cost_sensitive(self, y, sc):
         """Return the mean of the negative log-likelihood of the prediction
         of this model under a given target distribution.
@@ -1449,6 +1570,7 @@ class LogisticRegression(object):
         #return T.mean(T.log(self.p_y_given_x) * T.exp(-0.01 * sc)) * T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
         #8
         return T.mean(T.log(self.p_y_given_x**2) * T.exp(-0.01 * sc)) * T.mean(T.log(self.p_y_given_x**2)[T.arange(y.shape[0]), y])
+        
 
     def cost_sensitive_loss(self, y, c):
         """Return the mean of the negative log-likelihood of the prediction
@@ -1480,7 +1602,7 @@ class LogisticRegression(object):
         
         # mean of costs
         #1
-        #return T.mean(T.sum(self.p_y_given_x * T.transpose(c[:, y]), axis=1))
+        return T.mean(T.sum(self.p_y_given_x * T.transpose(c[:, y]), axis=1))
         #2
         #return T.mean(self.p_y_given_x[T.arange(y.shape[0]), y] * c[self.y_pred, y])
         #3
@@ -1510,7 +1632,33 @@ class LogisticRegression(object):
         #15
         #return T.mean(T.sum((self.p_y_given_x**3) * T.transpose(c[:, y]), axis=1))
         #16
-        return T.mean(T.sum((T.exp(self.p_y_given_x)) * T.transpose(c[:, y]), axis=1))
+        #return T.mean(T.sum((T.exp(self.p_y_given_x)) * T.transpose(c[:, y]), axis=1))
+        # 17
+        '''
+        similarity = T.dot(T.transpose(self.W), self.W)
+        square_mag = T.diag(similarity) + 0.0001
+        inv_square_mag = 1 / square_mag
+        #inv_square_mag[T.isinf(inv_square_mag)] = 0
+        
+        inv_mag = T.sqrt(inv_square_mag)
+        cosine = similarity * inv_mag
+        distance = 1 - cosine
+        
+        
+        distance = euclidean_distances(T.transpose(self.W), T.transpose(self.W))
+        #Tracer()()
+        return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y]) + T.sum(c * distance)
+         
+        A = T.transpose(self.W)
+        AA = T.reshape(T.sum(A*A, axis=1), (A.shape[0], 1))
+        BB = T.transpose(AA)
+        #BB[[0, 0], :]
+        DD = AA[:, T.arange(0, 32 )] + BB[T.arange(0, 32), :] -  2 * T.dot(A,  self.W) 
+        #DD = T.tile(AA, (1, 32)) + T.tile(BB, (32, 1)) - 2 * T.dot(A,  self.W) 
+        '''
+        
+        #f_euclidean = theano.function([X, Y], T.sqrt(squared_euclidean_distances))
+        #return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y]) + 0.00000000005 * T.sum(c / (self.squared_euclidean_distances + 0.00001))
         
     def errors(self, y):
         """Return a float representing the number of errors in the minibatch
@@ -1573,7 +1721,7 @@ def load_data(dataset):
     print type(y)
     print y.shape
     '''
-    create_directories(granularity=640, write=False)
+    create_directories(granularity=300, write=False, partitionMethod='median')
     X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1')
     test_set = (X_test.toarray(), Y_test)
     valid_set = (X_dev.toarray(), Y_dev)
@@ -1614,6 +1762,7 @@ def load_data(dataset):
     test_set_x, test_set_y = shared_dataset(test_set)
     valid_set_x, valid_set_y = shared_dataset(valid_set)
     train_set_x, train_set_y = shared_dataset(train_set)
+    #costMatrixNorm = normalize(costMatrix, norm='l2', axis=1, copy=True)
     missclassificationCostMatrix = theano.shared(costMatrix, borrow=True)
     trainCostMatrix2 = normalize(trainCostMatrix, norm='l2', axis=1, copy=True)
     missclassificationTrainCostMatrix = theano.shared(trainCostMatrix2, borrow=True)
@@ -1622,7 +1771,7 @@ def load_data(dataset):
     rval = [(train_set_x, train_set_y), (valid_set_x, valid_set_y),
             (test_set_x, test_set_y), Y_test, missclassificationCostMatrix, missclassificationTrainCostMatrix, missclassificationDevCostMatrix, missclassificationTestCostMatrix]
     return rval
-def sgd_optimization_mnist(learning_rate=0.1, n_epochs=1000,
+def sgd_optimization_mnist(learning_rate=0.1, n_epochs=100,
                            dataset='mnist.pkl.gz',
                            batch_size=1, modelType='nll'):
     """
@@ -1677,12 +1826,12 @@ def sgd_optimization_mnist(learning_rate=0.1, n_epochs=1000,
     # construct the logistic regression class
     # Each MNIST image has size 28*28
     #classifier = LogisticRegression(input=x, n_in=28 * 28, n_out=10)
-    classifier = LogisticRegression(input=x, n_in=train_set_x.get_value(borrow=True).shape[1], n_out=25)
+    classifier = LogisticRegression(input=x, n_in=train_set_x.get_value(borrow=True).shape[1], n_out=len(categories))
 
     # the cost we minimize during training is the negative log likelihood of
     # the model in symbolic format
-    #cost = classifier.negative_log_likelihood(y)
-    cost = classifier.cost_sensitive_loss(y, c)
+    cost = classifier.negative_log_likelihood(y)
+    #cost = classifier.cost_sensitive_loss(y, c)
     #cost = classifier.example_cost_sensitive(y, sc)
     
     # compiling a Theano function that computes the mistakes that are made by
@@ -1705,6 +1854,11 @@ def sgd_optimization_mnist(learning_rate=0.1, n_epochs=1000,
                 x: test_set_x,
                 y: test_set_y})
     
+    predictDev = theano.function(inputs=[],
+        outputs=[classifier.y_pred, classifier.errors(y)],
+        givens={
+            x: valid_set_x,
+            y: valid_set_y})
     probs = theano.function(inputs=[],
             outputs=classifier.p_y_given_x,
             givens={
@@ -1716,7 +1870,6 @@ def sgd_optimization_mnist(learning_rate=0.1, n_epochs=1000,
                 x: test_set_x,
                 y: test_set_y})
 
-    
     evalCostClass = theano.function(inputs=[],
             outputs=classifier.cost_sensitive_loss(y, c),
             givens={
@@ -1743,7 +1896,7 @@ def sgd_optimization_mnist(learning_rate=0.1, n_epochs=1000,
     # compiling a Theano function `train_model` that returns the cost, but in
     # the same time updates the parameter of the model based on the rules
     # defined in `updates`
-    '''
+    
     train_model = theano.function(inputs=[index],
             outputs=classifier.negative_log_likelihood(y),
             updates=updates,
@@ -1759,7 +1912,7 @@ def sgd_optimization_mnist(learning_rate=0.1, n_epochs=1000,
                 x: train_set_x[index * batch_size:(index + 1) * batch_size],
                 y: train_set_y[index * batch_size:(index + 1) * batch_size],
                 c: missclassificationCostMatrix})
-    '''
+    
     train_model = theano.function(inputs=[index],
             outputs=classifier.example_cost_sensitive(y, sc),
             updates=updates,
@@ -1803,6 +1956,8 @@ def sgd_optimization_mnist(learning_rate=0.1, n_epochs=1000,
         epoch = epoch + 1
 
         best_predictions , errorRate = predict()
+        valid_best_predictions, valid_errorRate = predictDev()
+        valid_meanD, valid_medianD = loss(valid_best_predictions, U_dev)
         meanD, medianD = loss(best_predictions, U_test)
         all_probs = probs()
         abodMean, abodMedian = abod(all_probs, best_predictions, U_test)
@@ -2265,7 +2420,12 @@ def test_mlp(learning_rate=0.01, L1_reg=0.00, L2_reg=0.0001, n_epochs=1000,
     train_set_x, train_set_y = datasets[0]
     valid_set_x, valid_set_y = datasets[1]
     test_set_x, test_set_y = datasets[2]
-    print test_set_y
+    Y_test = datasets[3]
+    missclassificationCostMatrix = datasets[4]
+    missclassificationTrainCostMatrix = datasets[5]
+    missclassificationDevCostMatrix = datasets[6]
+    missclassificationTestCostMatrix = datasets[7]
+    
     # compute number of minibatches for training, validation and testing
     n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
     n_valid_batches = valid_set_x.get_value(borrow=True).shape[0] / batch_size
@@ -2287,7 +2447,7 @@ def test_mlp(learning_rate=0.01, L1_reg=0.00, L2_reg=0.0001, n_epochs=1000,
     # construct the MLP class
     # classifier = MLP(rng=rng, input=x, n_in= 28 * 28, n_hidden=n_hidden, n_out=10)
     classifier = MLP(rng=rng, input=x, n_in=train_set_x.get_value(borrow=True).shape[1],
-                     n_hidden=n_hidden, n_out=25)
+                     n_hidden=n_hidden, n_out=len(categories))
 
     # the cost we minimize during training is the negative log likelihood of
     # the model plus the regularization terms (L1 and L2); cost is expressed
@@ -2310,8 +2470,15 @@ def test_mlp(learning_rate=0.01, L1_reg=0.00, L2_reg=0.0001, n_epochs=1000,
                 x: valid_set_x[index * batch_size:(index + 1) * batch_size],
                 y: valid_set_y[index * batch_size:(index + 1) * batch_size]})
     
-    predict = theano.function([], classifier.logRegressionLayer.y_pred,
-                   givens={x: test_set_x})
+    predict = theano.function(inputs=[],
+        outputs=[classifier.logRegressionLayer.y_pred, classifier.logRegressionLayer.errors(y)],
+        givens={
+            x: test_set_x,
+            y: test_set_y})
+    probs = theano.function(inputs=[],
+            outputs=classifier.logRegressionLayer.p_y_given_x,
+            givens={
+                x: test_set_x})
 
     # compute the gradient of cost with respect to theta (sotred in params)
     # the resulting gradients will be stored in a list gparams
@@ -2373,7 +2540,11 @@ def test_mlp(learning_rate=0.01, L1_reg=0.00, L2_reg=0.0001, n_epochs=1000,
 
     while (epoch < n_epochs) and (not done_looping):
         epoch = epoch + 1
-        loss(predict())
+        best_predictions , errorRate = predict()
+        meanD, medianD = loss(best_predictions, U_test)
+        print "mean distance is: " + str(meanD)
+        print "median distance is: " + str(medianD)
+        print "error rate: " + str(errorRate)
         for minibatch_index in xrange(n_train_batches):
 
             minibatch_avg_cost = train_model(minibatch_index)
@@ -2544,7 +2715,8 @@ def mixtureModel():
         dev_means.append(clf.means_[i])
     lossbycoordinates(dev_means)
 
-  
+
+      
 
 def dbn():
     from nolearn.dbn import DBN
@@ -2808,9 +2980,145 @@ def chart_me():
     legend = plt.legend(loc='upper right', shadow=False, fontsize='small')
     #legend.get_frame().set_facecolor('#00FFCC')
     plt.show(block=True)
+
+def pdf_multivariate_gauss(x, mu, cov):
+    '''
+    Caculate the multivariate normal density (pdf)
+    
+    Keyword arguments:
+        x = numpy array of a "d x 1" sample vector
+        mu = numpy array of a "d x 1" mean vector
+        cov = "numpy array of a d x d" covariance matrix
+    '''
+    assert(mu.shape[0] > mu.shape[1]), 'mu must be a row vector'
+    assert(x.shape[0] > x.shape[1]), 'x must be a row vector'
+    assert(cov.shape[0] == cov.shape[1]), 'covariance matrix must be square'
+    assert(mu.shape[0] == cov.shape[0]), 'cov_mat and mu_vec must have the same dimensions'
+    assert(mu.shape[0] == x.shape[0]), 'mu and x must have the same dimensions'
+    part1 = 1 / ( ((2* np.pi)**(len(mu)/2)) * (np.linalg.det(cov)**(1/2)) )
+    part2 = (-1/2) * ((x-mu).T.dot(np.linalg.inv(cov))).dot((x-mu))
+    return float(part1 * np.exp(part2))
+
+def mix_GP_LR():
+    #read GP output
+    with open(path.join(GEOTEXT_HOME, 'GP_results-True.pkl'), 'rb') as inf:
+        means , vars = pickle.load(inf)
+    
+    print means.shape
+    print vars.shape
+
+    gp_probs = numpy.ndarray(shape=(means.shape[0], len(categories)))
+    
+    for i in range(0, means.shape[0]):
+        latlon_mean = means[i]
+        
+    preds, probs, U_test = asclassification(granularity=640)
+    
+def wordDist():
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin')
+    vectorizer = TfidfVectorizer(use_idf=False, norm='l2', binary=False, sublinear_tf=True, min_df=1, max_df=1.0, ngram_range=(1, 1), stop_words='english')
+    wordsDist = {}
+    with codecs.open(path.join(GEOTEXT_HOME, 'full_text_normalized.txt'), 'r', encoding='latin') as inf:
+        for line in inf:
+            fs = line.split('\t')
+            if len(fs) < 6:
+                continue
+            text = fs[5]
+            lat = fs[3]
+            lon = fs[4]
+            latf, lonf = locationStr2Float(lat+','+lon)
+            label = assignClass(latf, lonf)
+            classLat = classLatMedian[str(label)]
+            classLon = classLonMedian[str(label)]
+            try:
+                vectorizer.fit([text])
+                print vectorizer.get_feature_names()
+                for word in feature_names:
+                    wordsDist[word] = [latf, lonf, classLat, classLon , label]
+                    
+            except:
+                pass
+            
+            
+def cross_validate():
+    results = {}
+    for partitionMethod in ['median', 'halfway', 'max_margin']:
+        for bucketSize in [50, 100, 200, 300, 400, 500, 600]:
+            initialize(partitionMethod=partitionMethod, granularity=bucketSize, encoding='latin', write=True)
+            preds, probs, U_test, meanTest, medianTest, meanDev, medianDev = asclassification(granularity=bucketSize, partitionMethod=partitionMethod)
+            results[partitionMethod + '-' + str(bucketSize)] = 'Test: '+ str(meanTest) + ' ' + str(medianTest) + ' Dev: ' + str(meanDev) + str(medianDev)
+    print results   
+    #get the classifier output
+    #mix them
+    #evaluate them
+def euclidean():
+    a = np.random.randint(5, size=(4, 2))
+    b = copy.deepcopy(a)
+    #b = np.random.randint(5, size=(4, 2))
+    m = 4
+    p = 2
+    n = 4
+
+    aa = np.sum(a*a, 1).reshape(4, 1)
+    bb = np.sum(b*b, 1).reshape(4, 1).transpose()
+    #bb = bb.reshape(1, 3)
+    #print aa.shape
+    #print bb.shape
+    #print aa
+    #print bb
+
+    #dd = AA(:,ones(1,n)) + BB(ones(1,m),:) - 2*A*B'
+    dd = aa[:, np.zeros(n, dtype=int)] + bb[np.zeros(m, dtype=int), :] - 2 * np.dot(a,  b.transpose())
+    #print a
+    #print b
+    #print dd
+    #print aa[:, np.zeros(n, dtype=int)]
+    #print np.tile(aa, n)
+    print bb[np.zeros(m, dtype=int), :]
+    print np.tile(bb, (m, 1))
+
+def extract_mentions(k=0):
+    print "extracting mention information from text"
+    global mentions
+    text = ''
+    for user in trainUsers:
+        text += userText[user].lower()
+    token_pattern=r"(?u)\b\w\w+\b"
+    token_pattern = re.compile(token_pattern)
+    mentionsList = [word for word in token_pattern.findall(text) if word.startswith('user_')]
+    mentionsDic = Counter(mentionsList)
+    mentions = [word for word in mentionsDic if mentionsDic[word] > k]
+    
+def iterative_collective_classification(encoding='latin1', granularity=300, partitionMethod='median'):
+    #extract content features
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1')
+    #classify
+    preds, probs, U_test, meanTest, medianTest, meanDev, medianDev = classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity)
+    #build network based on mentions (a pairwise similarity measure)
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1', use_mention_dictionary=True, use_idf=False, norm=None, binary=True, sublinear_tf=False, min_df=1, BuildCostMatrices=False)
+    #vstack train and dev/test data
+    X = sparse.vstack( [X_train, X_test] )
+    Tracer()()
+    nbrs = NearestNeighbors(n_neighbors=10, algorithm='ball_tree').fit(X)
+    indices = nbrs.kneighbors(X, return_distance=False)
+    
+    #build the network using pariwise euclidean distance
+    
+    #iterate until convergance
+        #produce aggregated relational features
+        #combine the features
+        #classify
+    
+    
+
+#euclidean()
+#cross_validate()
 #chart_me()
 #sys.exit()
-initialize('latin')
+#normalizeText()
+initialize(partitionMethod='median', granularity=300, encoding='latin', write=False)
+iterative_collective_classification()
+#wordDist()
 #matrix_test()
 #create_toy_cost_sensitive_data()
 # plt.scatter(Xs, Ys, s=20, c=Ls, marker='o', cmap=pb.cm.get_cmap('prism', lut=None), norm=None, vmin=None, vmax=None, alpha=None, linewidths=None, verts=None, hold=None)
@@ -2821,16 +3129,16 @@ initialize('latin')
 # pybi()
 # dbn()
 # mixtureModel()
-#asclassification(granularity=640)
+#asclassification(granularity=300, partitionMethod='median')
 
 #sgd_optimization_mnist(modelType='class')
 # gd_optimization_mnist()
 # test_mlp()
 # print_class_coordinates()
-
+#mix_GP_LR()
 #wireless()
 
 #loatGeolocationDataset()
-localizeGP()
+#localizeGP()
 #wirelessSGD()
-
+#test_mlp()
