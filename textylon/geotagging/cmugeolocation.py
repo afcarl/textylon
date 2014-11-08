@@ -5,11 +5,13 @@ Created on 4 Sep 2014
 '''
 import codecs
 import matplotlib as mpl
+mpl.use('Agg')
 import shutil
 import os
 import re
 import itertools
 from scipy import linalg
+from scipy.stats import threshold
 from sklearn import mixture
 import copy
 from math import radians, cos, sin, asin, sqrt
@@ -37,7 +39,8 @@ from IPython.core.debugger import Tracer
 from sklearn.utils.extmath import density
 import scipy.sparse as sparse
 from sklearn.neighbors import NearestNeighbors
-#from extract import get_tokens
+from sklearn.feature_selection import SelectKBest
+# from extract import get_tokens
 # from time import time
 from math import sqrt
 import numpy as np
@@ -70,7 +73,7 @@ from GPy import kern, likelihoods
 import codecs
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.neighbors import NearestNeighbors
-from numpy import float16, float32
+from numpy import float16, float32, float64
 from scipy.sparse import csr_matrix
 import sys
 from scipy import mean
@@ -533,7 +536,7 @@ def partitionLocView(granularity, partitionMethod):
     plt.title('US Map of Twitter Users partitioned by ' + partitionMethod + ' method: ' + str(granularity).strip() + ' person per cluster')
     plt.savefig(filename + '.jpg')
     plt.close()
-    #plt.show()  # pylab.show()            
+    # plt.show()  # pylab.show()            
 
 
 
@@ -541,7 +544,7 @@ def partitionLocView(granularity, partitionMethod):
 
 
 
-def createTrainDir(granularity, partitionMethod, create_dir=False ):
+def createTrainDir(granularity, partitionMethod, create_dir=False):
     # readlocationclusters
     global classLatMean
     global classLatMedian
@@ -888,7 +891,7 @@ def ppmiTransform(matrix):
         else:
             matrix[row, col] = 0.0
     print "PPMI transform finished successfully."    
-def feature_extractor(encoding='utf-8', use_mention_dictionary=False, use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=2, BuildCostMatrices=True, vectorizer=None):
+def feature_extractor(encoding='utf-8', use_mention_dictionary=False, use_idf=True, norm=None, binary=False, sublinear_tf=True, min_df=1, max_df=1.0, BuildCostMatrices=False, vectorizer=None):
     '''
     read train, dev and test directories and extract textual features using tfidfvectorizer.
     '''
@@ -949,11 +952,12 @@ def feature_extractor(encoding='utf-8', use_mention_dictionary=False, use_idf=Tr
     print("Extracting features from the training dataset using a sparse vectorizer")
     t0 = time.time()
     
-    if vectorizer==None:    
+    if vectorizer == None:    
         if use_mention_dictionary:
-            vectorizer = TfidfVectorizer(use_idf=True, norm='l2', binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=1.0, ngram_range=(1, 1), stop_words='english', vocabulary=mentions)
+            extract_mentions()
+            vectorizer = TfidfVectorizer(use_idf=use_idf, norm=norm, binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=max_df, ngram_range=(1, 1), stop_words=None, vocabulary=mentions)
         else:
-            vectorizer = TfidfVectorizer(use_idf=True, norm='l2', binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=1.0, ngram_range=(1, 1), stop_words='english')
+            vectorizer = TfidfVectorizer(use_idf=use_idf, norm=norm, binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=max_df, ngram_range=(1, 1), stop_words=None)
     
     X_train = vectorizer.fit_transform(data_train.data)
     '''
@@ -996,9 +1000,9 @@ def feature_extractor(encoding='utf-8', use_mention_dictionary=False, use_idf=Tr
         ppmiTransform(X_test)
     
             
-    chi = False
+    chi = True
     if chi:
-        k = 20000
+        k = 10000
         print("Extracting %d best features by a chi-squared test" % k)
         t0 = time.time()
         ch2 = SelectKBest(chi2, k=k)
@@ -1008,8 +1012,8 @@ def feature_extractor(encoding='utf-8', use_mention_dictionary=False, use_idf=Tr
         print("done in %fs" % (time.time() - t0))
         print()
         # feature_names = np.asarray(vectorizer.get_feature_names())
-    feature_names = np.asarray(vectorizer.get_feature_names())
-    
+    #feature_names = np.asarray(vectorizer.get_feature_names())
+    feature_names = None
     DO_SVD = False
     Reduction_D = 1000
     if DO_SVD:
@@ -1019,7 +1023,7 @@ def feature_extractor(encoding='utf-8', use_mention_dictionary=False, use_idf=Tr
         X_test = svd.transform(X_test)
         X_dev = svd.transform(X_dev)
         print("dimension reduction finished.")
-    BuildCostMatrices = True
+        
     if BuildCostMatrices:
         print "building cost matrix..."
         costMatrix = np.ndarray(shape=(len(classLatMedian), len(classLatMedian)), dtype=float)
@@ -1060,18 +1064,18 @@ def feature_extractor(encoding='utf-8', use_mention_dictionary=False, use_idf=Tr
     return X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names
     
 def abod(probs, preds, U_test):
-    #print "running abod to find the Approximate Bayes-Optimal Decision..."
+    # print "running abod to find the Approximate Bayes-Optimal Decision..."
     n_samples = probs.shape[0]
     n_categories = probs.shape[1]
     assert n_categories == len(categories), "fatal error: n_categories is not equal to len(categories) in abod"
-    probs = probs**1
-    preds = preds**1
+    probs = probs ** 1
+    preds = preds ** 1
     preds2 = []
     for s in range(0, n_samples):
         minCost = 1000000000.0
         minCostClass = -1
         # select top n prob indices
-        #for cf in sorted(range(len(probs[s])), key=lambda i: probs[s, i])[-3:]:
+        # for cf in sorted(range(len(probs[s])), key=lambda i: probs[s, i])[-3:]:
         for cf in range(0, n_categories):
             # print probs[s]
             cost = 0
@@ -1084,30 +1088,31 @@ def abod(probs, preds, U_test):
     return loss(preds2, U_test)
     
     
-def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity=10, DSExpansion=False, DSModification=False):
+def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity=10, DSExpansion=False, DSModification=False, compute_dev=True, report_verbose=False, clf=None):
     
     if DSExpansion:
         X_train, Y_train = dataSpaceExpansion(X_train, Y_train)
     
     if DSModification:
         Y_train = dataSpaceModification(Y_train, U_train)
-    #clf = LinearSVC(multi_class='ovr', class_weight='auto', C=1.0, loss='l2', penalty='l1', dual=False, tol=1e-3)
-    #clf = linear_model.LogisticRegression(C=10.0, penalty='l2')
-    clf = SGDClassifier(loss='huber', learning_rate='optimal', n_iter=10, shuffle=False, n_jobs=20)
-    #clf = MultiTaskLasso()
-    #clf = ElasticNet()
-    #clf = linear_model.Lasso(alpha = 0.1)
-    
-    #clf = SGDClassifier(loss, penalty, alpha, l1_ratio, fit_intercept, n_iter, shuffle, verbose, epsilon, n_jobs, random_state, learning_rate, eta0, power_t, class_weight, warm_start, rho, seed)
-    #clf = linear_model.MultiTaskLasso(alpha=0.1)
-    #clf = RidgeClassifier(tol=1e-2, solver="auto")
-    #clf = RidgeClassifier(alpha=1.0, fit_intercept=True, normalize=False, copy_X=True, max_iter=None, tol=1e-2, class_weight=None, solver="auto")
-    #clf = SVC(C=1.0, kernel='rbf', degree=3, gamma=0.0, coef0=0.0, shrinking=True, probability=False, tol=0.001, cache_size=200, class_weight=None, verbose=False, max_iter=-1, random_state=None)
-    #clf = Perceptron(n_iter=50)
-    #clf = PassiveAggressiveClassifier(n_iter=50)
-    #clf = KNeighborsClassifier(n_neighbors=10)
-    #clf = NearestCentroid()
-    # clf = MultinomialNB(alpha=.01)
+    if clf==None:
+        # clf = LinearSVC(multi_class='ovr', class_weight='auto', C=1.0, loss='l2', penalty='l1', dual=False, tol=1e-3)
+        #clf = linear_model.LogisticRegression(C=1.0, penalty='l2')
+        clf = SGDClassifier(loss='log',penalty='l2', learning_rate='optimal', n_iter=5, shuffle=False, n_jobs=20)
+        # clf = MultiTaskLasso()
+        # clf = ElasticNet()
+        # clf = linear_model.Lasso(alpha = 0.1)
+        
+        # clf = SGDClassifier(loss, penalty, alpha, l1_ratio, fit_intercept, n_iter, shuffle, verbose, epsilon, n_jobs, random_state, learning_rate, eta0, power_t, class_weight, warm_start, rho, seed)
+        # clf = linear_model.MultiTaskLasso(alpha=0.1)
+        # clf = RidgeClassifier(tol=1e-2, solver="auto")
+        # clf = RidgeClassifier(alpha=1.0, fit_intercept=True, normalize=False, copy_X=True, max_iter=None, tol=1e-2, class_weight=None, solver="auto")
+        # clf = SVC(C=1.0, kernel='rbf', degree=3, gamma=0.0, coef0=0.0, shrinking=True, probability=False, tol=0.001, cache_size=200, class_weight=None, verbose=False, max_iter=-1, random_state=None)
+        # clf = Perceptron(n_iter=50)
+        # clf = PassiveAggressiveClassifier(n_iter=50)
+        # clf = KNeighborsClassifier(n_neighbors=10)
+        # clf = NearestCentroid()
+        #clf = MultinomialNB(alpha=.01)
     print('_' * 80)
     print("Training: ")
     print(clf)
@@ -1118,48 +1123,47 @@ def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_t
     train_time = time.time() - t0
     print("train time: %0.3fs" % train_time)
     
-    report_verbose = True
     
-
-    devPreds = clf.predict(X_dev)
-    #score1 = None
-    #Score2 = None
-    score1 = metrics.f1_score(Y_dev, devPreds)
-
-    score2 = metrics.accuracy_score(Y_dev, devPreds)
     
-    if report_verbose:
-        print '**********dev************'
-        print("classification report:")
-        print(metrics.classification_report(Y_dev, devPreds, target_names=categories))
-        print("confusion matrix:")
-        print(metrics.confusion_matrix(Y_dev, devPreds))
-        print("f1-score:   %0.3f" % score1)
-        print("Accuracy score:   %0.3f" % score2)
-        if hasattr(clf, 'coef_'):
-            print("dimensionality: %d" % clf.coef_.shape[1])
-            print("density: %f" % density(clf.coef_))
-            print("top 10 keywords per class:")
-            for i, category in enumerate(categories):
-                top10 = np.argsort(clf.coef_[i])[-10:]
-                print("%s: %s" % (category, " ".join(feature_names[top10])))
-
-    #loss(devPreds, U_dev)
+    if compute_dev:
+        devPreds = clf.predict(X_dev)
+        # score1 = None
+        # Score2 = None
+        score1 = metrics.f1_score(Y_dev, devPreds)
+        score2 = metrics.accuracy_score(Y_dev, devPreds)
+        
+        if report_verbose:
+            print '**********dev************'
+            print("classification report:")
+            print(metrics.classification_report(Y_dev, devPreds, target_names=categories))
+            print("confusion matrix:")
+            print(metrics.confusion_matrix(Y_dev, devPreds))
+            print("f1-score:   %0.3f" % score1)
+            print("Accuracy score:   %0.3f" % score2)
+            if hasattr(clf, 'coef_'):
+                print("dimensionality: %d" % clf.coef_.shape[1])
+                print("density: %f" % density(clf.coef_))
+                print("top 10 keywords per class:")
+                for i, category in enumerate(categories):
+                    top10 = np.argsort(clf.coef_[i])[-10:]
+                    print("%s: %s" % (category, " ".join(feature_names[top10])))
+    
+        # loss(devPreds, U_dev)
     
     
         
     t0 = time.time()
     preds = clf.predict(X_test)
     # scores = clf.decision_function(X_test)
-    #probs = clf.predict_proba(X_test)
+    # probs = clf.predict_proba(X_test)
     probs = None
     # print preds.shape
     test_time = time.time() - t0
     
     
     
-    #score1 = metrics.f1_score(Y_test, preds)
-    #score2 = metrics.accuracy_score(Y_test, preds)
+    score1 = metrics.f1_score(Y_test, preds)
+    score2 = metrics.accuracy_score(Y_test, preds)
     if report_verbose:
         print "************test*************"
         print("test time:  %0.3fs" % test_time)
@@ -1178,11 +1182,15 @@ def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_t
                 print("%s: %s" % (category, " ".join(feature_names[top10])))
     print "test results"
     meanTest, medianTest = loss(preds, U_test)
-    print "development results"
-    meanDev, medianDev = loss(devPreds, U_dev)
+    meanDev = -1
+    medianDev = -1
+    if compute_dev:
+        print "development results"
+        meanDev, medianDev = loss(devPreds, U_dev)
     # loss(preds)
     # evaluate(preds,U_test, categories, None)
-    #abod(probs, preds, U_test)
+    # abod(probs, preds, U_test)
+
     return preds, probs, U_test, meanTest, medianTest, meanDev, medianDev
    
 # classify()
@@ -1266,7 +1274,7 @@ def localizeGP(max_iters=100, kernel=None, optimize=False, plot=False):
     # create simple GP Model
     m = GPy.models.GPRegression(data['Y'][:100], data['X'][:100], kernel=kernel)
 
-    #globals().update(locals())
+    # globals().update(locals())
 
     
     # optimize
@@ -1298,12 +1306,12 @@ def localizeGP(max_iters=100, kernel=None, optimize=False, plot=False):
 
     print "mean distance is: " + str(mean(distances))
     print "median distance is: " + str(median(distances))
-    with open('GP_results-'+ ".pkl", 'wb') as outf:
-        pickle.dump((Xpredict, Xvar), outf )
+    with open('GP_results-' + ".pkl", 'wb') as outf:
+        pickle.dump((Xpredict, Xvar), outf)
     
     # sse = ((data['Xtest'] - Xpredict)**2).sum()
     # aae = np.absolute(data['Xtest'] - Xpredict).sum()
-    #print m
+    # print m
     # print('Sum of squares error on test data: ' + str(sse))
     # print('average absolute error on test data: ' + str(aae))
     if plot:
@@ -1432,15 +1440,60 @@ def initialize(partitionMethod, granularity, encoding='latin', write=False):
     print 'total ' + str(len(userLocation)).strip() + " users."
     fillUserByLocation()
     fillTextByUser(encoding=encoding)
-    create_directories(granularity,partitionMethod, write)  
-    extract_mentions()          
+    create_directories(granularity, partitionMethod, write)        
 
-def asclassification(granularity, partitionMethod):
-    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1')    
-    preds, probs, U_test, meanTest, medianTest, meanDev, medianDev = classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity)
-    if len(sys.argv)==1 or sys.argv[1] != 'server':
+def classificationBench(granularity, partitionMethod, use_mention_dictionary=False):
+    medians = {}
+    max_dfs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50]
+    #max_dfs = [1, 5, 10, 20]
+    clf1 = MultinomialNB(alpha=.01)
+    clf2 = SGDClassifier(loss='log',penalty='l1', learning_rate='optimal', n_iter=5, shuffle=False, n_jobs=20)
+    clf3 = SGDClassifier(loss='log',penalty='l2', learning_rate='optimal', n_iter=5, shuffle=False, n_jobs=20)    
+    clf4 = NearestCentroid()
+    clf5 = LinearSVC(multi_class='ovr', class_weight='auto', C=1.0, loss='l2', penalty='l1', dual=False, tol=1e-3)
+    clf6 = LinearSVC(multi_class='ovr', class_weight='auto', C=1.0, loss='l2', penalty='l2', dual=False, tol=1e-3)
+    classifiers = [clf1, clf2, clf3, clf4, clf5, clf6]
+    for i in range(0, len(classifiers)):
+        clf = classifiers[i]
+        medians[i] = []
+        for max_df in max_dfs:
+            X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1', use_mention_dictionary=use_mention_dictionary, max_df=max_df)    
+            preds, probs, U_test, meanTest, medianTest, meanDev, medianDev = classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity, clf=clf)
+            meanD, medianD = loss(preds, U_test)
+            medians[i].append(medianD)
+            del X_train
+            del X_test
+            del X_dev
+    markers = ['b-', 'r-', 'g-', 'c-', 'm-', 'y-', 'k-', 'r--']
+    labels = ['MN-NaiveBayes', 'LR-l1', 'LR-l2', 'Nearest Centroid', 'LinearSVM-l1', 'LinearSVM-l2']
+    costFunction = 'Median distance (Y axis) as a function of max doc freq (X axis)'
+
+    for i in range(0, len(classifiers)):
+        y = medians[i]
+        x = max_dfs
+        minIndex = np.argmin(y)
+        plt.text(x[minIndex], y[minIndex], "min")
+        plt.title(costFunction)
+        plt.plot(x, y, markers[i], label=labels[i], linewidth=2)
+    plt.xlabel('max doc frequency', fontsize=18)
+    plt.ylabel('median distance', fontsize=16)
+    legend = plt.legend(loc='upper right', shadow=False, fontsize='small')
+    # legend.get_frame().set_facecolor('#00FFCC')
+    plt.savefig('result.png')
+    Tracer()()
+    '''
+    if len(sys.argv) == 1 or sys.argv[1] != 'server':
         partitionLocView(granularity=granularity, partitionMethod=partitionMethod)
     return preds, probs, U_test, meanTest, medianTest, meanDev, medianDev
+    '''
+def asclassification(granularity, partitionMethod, use_mention_dictionary=False):
+
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1', use_mention_dictionary=use_mention_dictionary, max_df=1.0, min_df=2)    
+    preds, probs, U_test, meanTest, medianTest, meanDev, medianDev = classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity)
+    if len(sys.argv) == 1 or sys.argv[1] != 'server':
+        partitionLocView(granularity=granularity, partitionMethod=partitionMethod)
+    return preds, probs, U_test, meanTest, medianTest, meanDev, medianDev
+
 
 class LogisticRegression(object):
     """Multi-class Logistic Regression Class
@@ -1473,7 +1526,7 @@ class LogisticRegression(object):
                                                  dtype=theano.config.floatX),
                                 name='W', borrow=True)
         
-        #self.W = theano.shared(value=numpy.random.rand(n_in, n_out), name='W', borrow=True)
+        # self.W = theano.shared(value=numpy.random.rand(n_in, n_out), name='W', borrow=True)
         # initialize the baises b as a vector of n_out 0s
         self.b = theano.shared(value=numpy.zeros((n_out,),
                                                  dtype=theano.config.floatX),
@@ -1520,15 +1573,15 @@ class LogisticRegression(object):
         # i.e., the mean log-likelihood across the minibatch.
         # print T.diag(T.dot(self.p_y_given_x[T.arange(y.shape[0]), 0:24], c[0:24, y]))
         
-        #1 main
-        #return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
-        #2 entropy nll + entropy
-        #return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y]) - T.mean(T.sum(self.p_y_given_x * T.log(self.p_y_given_x), axis=1))
-        #3 nll + regularization
-        #return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y]) + 0.0001 * T.sum(self.W**2)
-        #4 least square error
-        #return T.mean(T.sqr(1 - self.p_y_given_x[T.arange(y.shape[0]), y]))
-        #5 nnl + l1regul
+        # 1 main
+        # return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        # 2 entropy nll + entropy
+        # return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y]) - T.mean(T.sum(self.p_y_given_x * T.log(self.p_y_given_x), axis=1))
+        # 3 nll + regularization
+        # return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y]) + 0.0001 * T.sum(self.W**2)
+        # 4 least square error
+        # return T.mean(T.sqr(1 - self.p_y_given_x[T.arange(y.shape[0]), y]))
+        # 5 nnl + l1regul
         return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y]) + 0.001 * T.sum(T.abs_(self.W))
     def example_cost_sensitive(self, y, sc):
         """Return the mean of the negative log-likelihood of the prediction
@@ -1558,18 +1611,18 @@ class LogisticRegression(object):
         # the mean (across minibatch examples) of the elements in v,
         # i.e., the mean log-likelihood across the minibatch.
         # print T.diag(T.dot(self.p_y_given_x[T.arange(y.shape[0]), 0:24], c[0:24, y]))
-        #1 main
-        #return T.mean(T.sum(self.p_y_given_x * sc, axis=1))
-        #2 trevor
-        #return -T.mean(T.log(self.p_y_given_x) * T.exp(-0.01 * sc))
-        #3 nll+trevor
-        #return -0.1* T.mean(T.log(self.p_y_given_x) * T.exp(-0.01 * sc)) - T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
-        #6
-        #return -T.mean(T.log(self.p_y_given_x) * T.exp(-0.01 * sc)) - T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
-        #7
-        #return T.mean(T.log(self.p_y_given_x) * T.exp(-0.01 * sc)) * T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
-        #8
-        return T.mean(T.log(self.p_y_given_x**2) * T.exp(-0.01 * sc)) * T.mean(T.log(self.p_y_given_x**2)[T.arange(y.shape[0]), y])
+        # 1 main
+        # return T.mean(T.sum(self.p_y_given_x * sc, axis=1))
+        # 2 trevor
+        # return -T.mean(T.log(self.p_y_given_x) * T.exp(-0.01 * sc))
+        # 3 nll+trevor
+        # return -0.1* T.mean(T.log(self.p_y_given_x) * T.exp(-0.01 * sc)) - T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        # 6
+        # return -T.mean(T.log(self.p_y_given_x) * T.exp(-0.01 * sc)) - T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        # 7
+        # return T.mean(T.log(self.p_y_given_x) * T.exp(-0.01 * sc)) * T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        # 8
+        return T.mean(T.log(self.p_y_given_x ** 2) * T.exp(-0.01 * sc)) * T.mean(T.log(self.p_y_given_x ** 2)[T.arange(y.shape[0]), y])
         
 
     def cost_sensitive_loss(self, y, c):
@@ -1601,38 +1654,38 @@ class LogisticRegression(object):
         # i.e., the mean log-likelihood across the minibatch.
         
         # mean of costs
-        #1
+        # 1
         return T.mean(T.sum(self.p_y_given_x * T.transpose(c[:, y]), axis=1))
-        #2
-        #return T.mean(self.p_y_given_x[T.arange(y.shape[0]), y] * c[self.y_pred, y])
-        #3
-        #return T.mean(c[self.y_pred, y])
-        #4 main
-        #return 0.001 * T.mean(T.sum(self.p_y_given_x * T.transpose(c[:, y]), axis=1)) - T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
-        #5
-        #return 0.0001 * T.mean(T.sum(self.p_y_given_x * T.transpose(c[:, y]), axis=1)) - T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
-        #6
-        #return -T.mean(T.log(T.diag(T.dot(self.p_y_given_x, c[:, y])) / T.max(T.diag(T.dot(self.p_y_given_x, c[:, y]))))) -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
-        #7
-        #return T.mean(T.diag(T.dot(self.p_y_given_x, c[:, y])))
-        #8
-        #return T.min(T.diag(T.dot(self.p_y_given_x, c[:, y])))
-        #9
-        #return T.max(T.diag(T.dot(self.p_y_given_x, c[:, y])))
-        #10
-        #return T.max(T.diag(T.dot(self.p_y_given_x, c[:, y]))) + T.mean(T.diag(T.dot(self.p_y_given_x, c[:, y])))
-        #11
-        #return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
-        #12
-        #return T.mean(self.p_y_given_x[T.arange(y.shape[0]), y] * c[self.y_pred, y])
-        #13
-        #return T.mean(T.sum(-T.log(self.p_y_given_x) * T.transpose(c[:, y]), axis=1))
-        #14
-        #return T.mean(T.sum(self.p_y_given_x * T.exp(0.001 * T.transpose(c[:, y])), axis=1))
-        #15
-        #return T.mean(T.sum((self.p_y_given_x**3) * T.transpose(c[:, y]), axis=1))
-        #16
-        #return T.mean(T.sum((T.exp(self.p_y_given_x)) * T.transpose(c[:, y]), axis=1))
+        # 2
+        # return T.mean(self.p_y_given_x[T.arange(y.shape[0]), y] * c[self.y_pred, y])
+        # 3
+        # return T.mean(c[self.y_pred, y])
+        # 4 main
+        # return 0.001 * T.mean(T.sum(self.p_y_given_x * T.transpose(c[:, y]), axis=1)) - T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        # 5
+        # return 0.0001 * T.mean(T.sum(self.p_y_given_x * T.transpose(c[:, y]), axis=1)) - T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        # 6
+        # return -T.mean(T.log(T.diag(T.dot(self.p_y_given_x, c[:, y])) / T.max(T.diag(T.dot(self.p_y_given_x, c[:, y]))))) -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        # 7
+        # return T.mean(T.diag(T.dot(self.p_y_given_x, c[:, y])))
+        # 8
+        # return T.min(T.diag(T.dot(self.p_y_given_x, c[:, y])))
+        # 9
+        # return T.max(T.diag(T.dot(self.p_y_given_x, c[:, y])))
+        # 10
+        # return T.max(T.diag(T.dot(self.p_y_given_x, c[:, y]))) + T.mean(T.diag(T.dot(self.p_y_given_x, c[:, y])))
+        # 11
+        # return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])
+        # 12
+        # return T.mean(self.p_y_given_x[T.arange(y.shape[0]), y] * c[self.y_pred, y])
+        # 13
+        # return T.mean(T.sum(-T.log(self.p_y_given_x) * T.transpose(c[:, y]), axis=1))
+        # 14
+        # return T.mean(T.sum(self.p_y_given_x * T.exp(0.001 * T.transpose(c[:, y])), axis=1))
+        # 15
+        # return T.mean(T.sum((self.p_y_given_x**3) * T.transpose(c[:, y]), axis=1))
+        # 16
+        # return T.mean(T.sum((T.exp(self.p_y_given_x)) * T.transpose(c[:, y]), axis=1))
         # 17
         '''
         similarity = T.dot(T.transpose(self.W), self.W)
@@ -1657,8 +1710,8 @@ class LogisticRegression(object):
         #DD = T.tile(AA, (1, 32)) + T.tile(BB, (32, 1)) - 2 * T.dot(A,  self.W) 
         '''
         
-        #f_euclidean = theano.function([X, Y], T.sqrt(squared_euclidean_distances))
-        #return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y]) + 0.00000000005 * T.sum(c / (self.squared_euclidean_distances + 0.00001))
+        # f_euclidean = theano.function([X, Y], T.sqrt(squared_euclidean_distances))
+        # return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y]) + 0.00000000005 * T.sum(c / (self.squared_euclidean_distances + 0.00001))
         
     def errors(self, y):
         """Return a float representing the number of errors in the minibatch
@@ -1762,7 +1815,7 @@ def load_data(dataset):
     test_set_x, test_set_y = shared_dataset(test_set)
     valid_set_x, valid_set_y = shared_dataset(valid_set)
     train_set_x, train_set_y = shared_dataset(train_set)
-    #costMatrixNorm = normalize(costMatrix, norm='l2', axis=1, copy=True)
+    # costMatrixNorm = normalize(costMatrix, norm='l2', axis=1, copy=True)
     missclassificationCostMatrix = theano.shared(costMatrix, borrow=True)
     trainCostMatrix2 = normalize(trainCostMatrix, norm='l2', axis=1, copy=True)
     missclassificationTrainCostMatrix = theano.shared(trainCostMatrix2, borrow=True)
@@ -1820,19 +1873,19 @@ def sgd_optimization_mnist(learning_rate=0.1, n_epochs=100,
     y = T.ivector('y')  # the labels are presented as 1D vector of
                            # [int] labels
     c = T.matrix('c')  # misclassification cost matrix
-    sc = T.matrix('sc')   #sample dependent cost
+    sc = T.matrix('sc')  # sample dependent cost
     
 
     # construct the logistic regression class
     # Each MNIST image has size 28*28
-    #classifier = LogisticRegression(input=x, n_in=28 * 28, n_out=10)
+    # classifier = LogisticRegression(input=x, n_in=28 * 28, n_out=10)
     classifier = LogisticRegression(input=x, n_in=train_set_x.get_value(borrow=True).shape[1], n_out=len(categories))
 
     # the cost we minimize during training is the negative log likelihood of
     # the model in symbolic format
     cost = classifier.negative_log_likelihood(y)
-    #cost = classifier.cost_sensitive_loss(y, c)
-    #cost = classifier.example_cost_sensitive(y, sc)
+    # cost = classifier.cost_sensitive_loss(y, c)
+    # cost = classifier.example_cost_sensitive(y, sc)
     
     # compiling a Theano function that computes the mistakes that are made by
     # the model on a minibatch
@@ -1961,7 +2014,7 @@ def sgd_optimization_mnist(learning_rate=0.1, n_epochs=100,
         meanD, medianD = loss(best_predictions, U_test)
         all_probs = probs()
         abodMean, abodMedian = abod(all_probs, best_predictions, U_test)
-        print str(epoch) + ',' + str(evalCostNLL()) + ',' + str(evalCostClass()) + ',' +  str(evalCostExample())  + ',' + str(errorRate) + ',' +  str(meanD) + ',' + str(medianD) + ',' + str(abodMean) + ',' + str(abodMedian) + '\n'
+        print str(epoch) + ',' + str(evalCostNLL()) + ',' + str(evalCostClass()) + ',' + str(evalCostExample()) + ',' + str(errorRate) + ',' + str(meanD) + ',' + str(medianD) + ',' + str(abodMean) + ',' + str(abodMedian) + '\n'
         if (epoch > 100 or errorRate < 0.65) and change2class:
             change2class = False
             print "changed to class based mode"
@@ -2943,14 +2996,14 @@ def matrix_test():
     a = np.random.rand(3, 2)
     b = np.random.rand(3, 2)
     b = b.min(axis=0)
-    #b.reshape((3, 1))
+    # b.reshape((3, 1))
     print a
     print '-------------'
     print b
     print '-------------'
-    #print a * b
+    # print a * b
     print '-------------'
-    #print np.sum(a * b , axis=1)
+    # print np.sum(a * b , axis=1)
     print '-------------'
     print a / b
 def chart_me():
@@ -2966,19 +3019,19 @@ def chart_me():
         x = data[:, 0]
         y = data[:, i]
         magnificient = ''
-        if labels[i-1] in ['NLL cost']:
+        if labels[i - 1] in ['NLL cost']:
             y = y * 100
             magnificient = ' 100x'
-        if labels[i-1] in ['error rate']:
+        if labels[i - 1] in ['error rate']:
             y = y * 100
         
-        labels[i-1] = labels[i-1] + magnificient
+        labels[i - 1] = labels[i - 1] + magnificient
         minIndex = np.argmin(y)
         plt.text(x[minIndex], y[minIndex], "min")
         plt.title(costFunction)
-        plt.plot(x, y, markers[i-1], label=labels[i-1], linewidth=2)
+        plt.plot(x, y, markers[i - 1], label=labels[i - 1], linewidth=2)
     legend = plt.legend(loc='upper right', shadow=False, fontsize='small')
-    #legend.get_frame().set_facecolor('#00FFCC')
+    # legend.get_frame().set_facecolor('#00FFCC')
     plt.show(block=True)
 
 def pdf_multivariate_gauss(x, mu, cov):
@@ -2995,12 +3048,12 @@ def pdf_multivariate_gauss(x, mu, cov):
     assert(cov.shape[0] == cov.shape[1]), 'covariance matrix must be square'
     assert(mu.shape[0] == cov.shape[0]), 'cov_mat and mu_vec must have the same dimensions'
     assert(mu.shape[0] == x.shape[0]), 'mu and x must have the same dimensions'
-    part1 = 1 / ( ((2* np.pi)**(len(mu)/2)) * (np.linalg.det(cov)**(1/2)) )
-    part2 = (-1/2) * ((x-mu).T.dot(np.linalg.inv(cov))).dot((x-mu))
+    part1 = 1 / (((2 * np.pi) ** (len(mu) / 2)) * (np.linalg.det(cov) ** (1 / 2)))
+    part2 = (-1 / 2) * ((x - mu).T.dot(np.linalg.inv(cov))).dot((x - mu))
     return float(part1 * np.exp(part2))
 
 def mix_GP_LR():
-    #read GP output
+    # read GP output
     with open(path.join(GEOTEXT_HOME, 'GP_results-True.pkl'), 'rb') as inf:
         means , vars = pickle.load(inf)
     
@@ -3026,7 +3079,7 @@ def wordDist():
             text = fs[5]
             lat = fs[3]
             lon = fs[4]
-            latf, lonf = locationStr2Float(lat+','+lon)
+            latf, lonf = locationStr2Float(lat + ',' + lon)
             label = assignClass(latf, lonf)
             classLat = classLatMedian[str(label)]
             classLon = classLonMedian[str(label)]
@@ -3046,34 +3099,34 @@ def cross_validate():
         for bucketSize in [50, 100, 200, 300, 400, 500, 600]:
             initialize(partitionMethod=partitionMethod, granularity=bucketSize, encoding='latin', write=True)
             preds, probs, U_test, meanTest, medianTest, meanDev, medianDev = asclassification(granularity=bucketSize, partitionMethod=partitionMethod)
-            results[partitionMethod + '-' + str(bucketSize)] = 'Test: '+ str(meanTest) + ' ' + str(medianTest) + ' Dev: ' + str(meanDev) + str(medianDev)
+            results[partitionMethod + '-' + str(bucketSize)] = 'Test: ' + str(meanTest) + ' ' + str(medianTest) + ' Dev: ' + str(meanDev) + str(medianDev)
     print results   
-    #get the classifier output
-    #mix them
-    #evaluate them
+    # get the classifier output
+    # mix them
+    # evaluate them
 def euclidean():
     a = np.random.randint(5, size=(4, 2))
     b = copy.deepcopy(a)
-    #b = np.random.randint(5, size=(4, 2))
+    # b = np.random.randint(5, size=(4, 2))
     m = 4
     p = 2
     n = 4
 
-    aa = np.sum(a*a, 1).reshape(4, 1)
-    bb = np.sum(b*b, 1).reshape(4, 1).transpose()
-    #bb = bb.reshape(1, 3)
-    #print aa.shape
-    #print bb.shape
-    #print aa
-    #print bb
+    aa = np.sum(a * a, 1).reshape(4, 1)
+    bb = np.sum(b * b, 1).reshape(4, 1).transpose()
+    # bb = bb.reshape(1, 3)
+    # print aa.shape
+    # print bb.shape
+    # print aa
+    # print bb
 
-    #dd = AA(:,ones(1,n)) + BB(ones(1,m),:) - 2*A*B'
-    dd = aa[:, np.zeros(n, dtype=int)] + bb[np.zeros(m, dtype=int), :] - 2 * np.dot(a,  b.transpose())
-    #print a
-    #print b
-    #print dd
-    #print aa[:, np.zeros(n, dtype=int)]
-    #print np.tile(aa, n)
+    # dd = AA(:,ones(1,n)) + BB(ones(1,m),:) - 2*A*B'
+    dd = aa[:, np.zeros(n, dtype=int)] + bb[np.zeros(m, dtype=int), :] - 2 * np.dot(a, b.transpose())
+    # print a
+    # print b
+    # print dd
+    # print aa[:, np.zeros(n, dtype=int)]
+    # print np.tile(aa, n)
     print bb[np.zeros(m, dtype=int), :]
     print np.tile(bb, (m, 1))
 
@@ -3081,46 +3134,148 @@ def extract_mentions(k=0):
     print "extracting mention information from text"
     global mentions
     text = ''
-    for user in trainUsers:
-        text += userText[user].lower()
-    token_pattern=r"(?u)\b\w\w+\b"
+    #for user in trainUsers:
+    #    text += userText[user].lower()
+    text = ' '.join(userText.values())
+    text = text.lower()
+    token_pattern = r"(?u)\b\w\w+\b"
+    #token_pattern = "[\@\#]+\w\w+\b"
     token_pattern = re.compile(token_pattern)
-    mentionsList = [word for word in token_pattern.findall(text) if word.startswith('user_')]
+    #mentionsList = [word for word in token_pattern.findall(text) if word.startswith('user_')]
+    mentionsList = [word for word in token_pattern.findall(text)]
     mentionsDic = Counter(mentionsList)
     mentions = [word for word in mentionsDic if mentionsDic[word] > k]
     
 def iterative_collective_classification(encoding='latin1', granularity=300, partitionMethod='median'):
-    #extract content features
-    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1')
-    #classify
-    preds, probs, U_test, meanTest, medianTest, meanDev, medianDev = classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity)
-    #build network based on mentions (a pairwise similarity measure)
-    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1', use_mention_dictionary=True, use_idf=False, norm=None, binary=True, sublinear_tf=False, min_df=1, BuildCostMatrices=False)
-    #vstack train and dev/test data
-    X = sparse.vstack( [X_train, X_test] )
-    Tracer()()
-    nbrs = NearestNeighbors(n_neighbors=10, algorithm='ball_tree').fit(X)
-    indices = nbrs.kneighbors(X, return_distance=False)
-    
-    #build the network using pariwise euclidean distance
-    
-    #iterate until convergance
-        #produce aggregated relational features
-        #combine the features
-        #classify
-    
-    
+    global feature_names
 
-#euclidean()
-#cross_validate()
-#chart_me()
-#sys.exit()
-#normalizeText()
+    # extract content features
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1', use_mention_dictionary=True)
+
+    # classify
+    preds, probs, U_test, meanTest, medianTest, meanDev, medianDev = classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity, compute_dev=False, report_verbose=False)
+    loss(preds, U_test)
+    # build network based on mentions (a pairwise similarity measure)
+    vectorizer = CountVectorizer(encoding='latin1', vocabulary=mentions, binary=True)
+    X_train_relational, Y_train, U_train, X_dev_relational, Y_dev, U_dev, X_test_relational, Y_test, U_test, categories, feature_names_relational = feature_extractor(encoding='latin1', use_mention_dictionary=True, use_idf=False, norm=None, binary=True, sublinear_tf=False, min_df=1, BuildCostMatrices=False, vectorizer=vectorizer)
+    # vstack train and dev/test data
+    X_content = sparse.vstack([X_train, X_test]).tocsr()
+    X_relational = sparse.vstack([X_train_relational, X_test_relational]).tocsr()
+    Xt_relational = np.transpose(X_relational)
+    # find the number of shared mentions for all pairs of users/samples 
+    pairs = X_relational.dot(Xt_relational)
+    # set the diagonal to zero (the number of shared mentions of a user with herself)
+    #equal1_indices = pairs < 2
+    #pairs[equal1_indices] = 0
+    #pairs = threshold(pairs, 2, 100, 0)
+    pairs.setdiag(0)
+    content_relational_features = feature_names.tolist()
+    for i in range(0, len(categories)):
+        content_relational_features.append('new_relational_aggregated_feature' + str(i))
+    feature_names = np.asarray(content_relational_features)
+    n_iter = 1000
+    for i in range(0, n_iter):
+        print "iteration " + str(i)
+        Y_train_reshaped = Y_train.reshape(Y_train.shape[0], 1)
+        Y_test_reshaped = Y_test.reshape(Y_test.shape[0], 1)
+        Y = csr_matrix(sparse.vstack([Y_train_reshaped, Y_test_reshaped])).todense()
+        XClass = csr_matrix((X_relational.shape[0], len(categories)), dtype=int)
+        # XClass matrix n_samples x n_classes where XClass[i, j] = 1 if sample i belongs to class j otherwise zero 
+        XClass[np.arange(XClass.shape[0]), np.transpose(Y[np.arange(XClass.shape[0]), 0])] = 1
+        # csr matrix n_samples x n_classes where n[i, j]= sum(friendshipStrength) for neighbors of i in class j  
+        neighborhoodClassDistribution = csr_matrix(pairs.dot(XClass), shape=(pairs.shape[0], XClass.shape[1]), dtype=float)
+        neighborhoodClassDistribution = normalize(neighborhoodClassDistribution, norm='l2', copy=False)
+        # new train and test features
+        new_content_relation_features = sparse.hstack([X_content, neighborhoodClassDistribution]).tocsr()
+        X_train_content_relation = new_content_relation_features[0:len(U_train), :]
+        X_test_content_relation = new_content_relation_features[len(U_train):, :]
+        X_train_relational_aggregated = neighborhoodClassDistribution[0:len(U_train), :] 
+        X_test_relational_aggregated = neighborhoodClassDistribution[len(U_train):, :]
+        preds, probs, U_test, meanTest, medianTest, meanDev, medianDev = classify(X_train_content_relation, Y_train, U_train, X_dev, Y_dev, U_dev, X_test_content_relation, Y_test, U_test, categories, feature_names, granularity, compute_dev=False, report_verbose=False)
+        loss(preds, U_test)
+        Y_test = np.array(preds)
+    Tracer()()
+    # build the network using pariwise euclidean distance
+    
+    # iterate until convergance
+        # produce aggregated relational features
+        # combine the features
+        # classify
+    
+    
+def test_re():
+    file = '/home/af/Downloads/GeoText.2010-10-12/full_text.txt'
+    file = '/home/af/Downloads/Roller Dataset NA/training-big.txt'
+    file = '/home/af/Downloads/data/twitter-world/twitter-world-training.data.txt'
+    with codecs.open(file, 'r', 'latin') as inf:
+        text = inf.read()
+        #print text
+    #token_pattern = r"[\@\#]+\w\w+\b"
+    #token_pattern = re.compile(token_pattern)
+    #mentionsList = [word for word in token_pattern.findall(text)]
+
+    #print a
+    #mentionsList = [word for word in text.split() if word.startswith('@') or word.startswith('#')]
+    mentionsList = []
+    for word in text.split():
+        if (word.startswith('@') or word.startswith('#')) :
+            mentionsList.append(word)
+    #print mentionsList[:-1]
+    print len(mentionsList)
+
+def group_lasso():
+    import spams
+    import numpy as np
+    import scipy.sparse as ssp
+    myfloat=float
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1', use_mention_dictionary=False, min_df=2, max_df=10)
+    # X should be n_feature x n_sample in spams
+    X_train = normalize(X_train, norm='l2')
+    X = np.asfortranarray(X_train.todense())
+    #X = np.asfortranarray(X - np.tile(np.mean(X,0),(X.shape[0],1)),dtype=myfloat)
+    #X = spams.normalize(X1)
+    
+    Y = np.asfortranarray(Y_train.reshape(Y_train.shape[0], 1))
+    
+    param = {'numThreads' : -1,'verbose' : True,
+             'lambda1' : 0.05, 'it0' : 10, 'max_it' : 200,
+             'L0' : 0.1, 'tol' : 1e-3, 'intercept' : False,
+             'pos' : False}
+
+    nclasses = np.max(Y[:])+1
+    print "the number of classes is " + str(nclasses)
+    W0 = np.zeros((X.shape[1],nclasses * Y.shape[1]),dtype=myfloat,order="FORTRAN")
+    Tracer()()
+    # Multi-Class classification
+    
+    
+    
+    param['regul'] = 'l1'
+    param['regul'] = 'l1'
+    param['loss'] = 'weighted-logistic'
+    param['lambda1'] = 0.01
+    param['loss'] = 'logistic'
+    #param['loss'] = 'multi-logistic'
+    print '\nFISTA + Multi-Class Logistic l1'
+    (W, optim_info) = spams.fistaFlat(Y,X,W0,True,**param)
+    print 'mean loss: %f, mean relative duality_gap: %f, number of iterations: %f' %(np.mean(optim_info[0,:]),np.mean(optim_info[2,:]),np.mean(optim_info[3,:]))
+    # can be used of course with other regularization functions, intercept,...
+
+
+        
+#test_re()
+# euclidean()
+# cross_validate()
+# chart_me()
+# sys.exit()
+# normalizeText()
 initialize(partitionMethod='median', granularity=300, encoding='latin', write=False)
-iterative_collective_classification()
-#wordDist()
-#matrix_test()
-#create_toy_cost_sensitive_data()
+group_lasso()    
+
+#iterative_collective_classification()
+# wordDist()
+# matrix_test()
+# create_toy_cost_sensitive_data()
 # plt.scatter(Xs, Ys, s=20, c=Ls, marker='o', cmap=pb.cm.get_cmap('prism', lut=None), norm=None, vmin=None, vmax=None, alpha=None, linewidths=None, verts=None, hold=None)
 # plt.show(block=True)
 
@@ -3129,16 +3284,17 @@ iterative_collective_classification()
 # pybi()
 # dbn()
 # mixtureModel()
-#asclassification(granularity=300, partitionMethod='median')
+#asclassification(granularity=300, partitionMethod='median', use_mention_dictionary=False)
+#classificationBench(granularity=300, partitionMethod='median', use_mention_dictionary=False)
 
-#sgd_optimization_mnist(modelType='class')
+# sgd_optimization_mnist(modelType='class')
 # gd_optimization_mnist()
 # test_mlp()
 # print_class_coordinates()
-#mix_GP_LR()
-#wireless()
+# mix_GP_LR()
+# wireless()
 
-#loatGeolocationDataset()
-#localizeGP()
-#wirelessSGD()
-#test_mlp()
+# loatGeolocationDataset()
+# localizeGP()
+# wirelessSGD()
+# test_mlp()

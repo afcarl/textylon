@@ -29,8 +29,8 @@ def csv2sparse(address, outputFile, separator=',', encoding='utf-8'):
                 return -1
             rowName = items[0]
             columnName = items[1]
-            #value = items[2]
-            #add column and row names to dictionaries and find their matrix cell
+            # value = items[2]
+            # add column and row names to dictionaries and find their matrix cell
             rowId = -1
             columnId = -1
             if rowName in rows:
@@ -57,10 +57,10 @@ def csv2sparse(address, outputFile, separator=',', encoding='utf-8'):
             mat[rowId, columnId] = value
     
     
-    #save the matrix
+    # save the matrix
     print "saving the matrix in " + outputFile
-    #with codecs.open(outputFile, 'wb') as outf:
-        #pickle.dump((mat, rows, columns), outf)
+    # with codecs.open(outputFile, 'wb') as outf:
+        # pickle.dump((mat, rows, columns), outf)
     return mat
 
 def readPickle(address):
@@ -81,20 +81,20 @@ def factorize(orig_matrix, dimension):
     print "SVD running with " + str(dimension) + " factor..."
     ut, s, vt = sparsesvd(orig_matrix, dimension)
     print "pickling the matrices..."
-    #with codecs.open(path.join(HOME_DIR, 'svd'+ '_' +str(dimension).strip() + '.pickle'), 'wb') as outf:
+    # with codecs.open(path.join(HOME_DIR, 'svd'+ '_' +str(dimension).strip() + '.pickle'), 'wb') as outf:
     #    pickle.dump((ut, s, vt), outf)
     ut = csr_matrix(ut)
     s = csr_matrix(np.diag(s))
     vt = csr_matrix(vt)
     result = ut.T.dot(s.dot(vt))
-    #result = np.dot(ut.T, np.dot(np.diag(s), vt))
+    # result = np.dot(ut.T, np.dot(np.diag(s), vt))
     return result
      
 mat = csv2sparse(path.join(HOME_DIR, 'stackdb.txt'), path.join(HOME_DIR, 'stackMatrix.pickle'))
-#mat, rows, columns = readPickle(path.join(HOME_DIR, 'stackMatrix.pickle'))
+# mat, rows, columns = readPickle(path.join(HOME_DIR, 'stackMatrix.pickle'))
 dimension = 100
-new_matrix =  factorize(mat.tocsc(), dimension)
-#with codecs.open(path.join(HOME_DIR, 'new_matrix'+ str(dimension).strip()+'.pickle')) as inf:
-    #pickle.dump(new_matrix, inf)
+new_matrix = factorize(mat.tocsc(), dimension)
+# with codecs.open(path.join(HOME_DIR, 'new_matrix'+ str(dimension).strip()+'.pickle')) as inf:
+    # pickle.dump(new_matrix, inf)
 
 print mean_squared_error(mat, new_matrix)

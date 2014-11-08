@@ -45,7 +45,7 @@ labels = []
 def users(file, type='train'):
     with codecs.open(file, 'r', 'latin') as inf:
         for line in inf:
-            #print line
+            # print line
             fields = line.split()
             user = fields[0].strip()
             lat = float(fields[1])
@@ -56,7 +56,7 @@ def users(file, type='train'):
 users(trainfile)
 samples = np.array(samples)
 labels = np.array(labels)
-#print type(samples)
+# print type(samples)
 np.random.seed(0)
 mydataset = (samples, labels)
 # Generate datasets. We choose the size big enough to see the scalability
@@ -77,7 +77,7 @@ plt.subplots_adjust(left=.001, right=.999, bottom=.001, top=.96, wspace=.05,
 
 plot_num = 1
 for i_dataset, dataset in enumerate([mydataset]):
-#for i_dataset, dataset in enumerate([mydataset]):
+# for i_dataset, dataset in enumerate([mydataset]):
     X, y = dataset
     
     # normalize dataset for easier parameter selection
@@ -92,14 +92,14 @@ for i_dataset, dataset in enumerate([mydataset]):
     connectivity = 0.5 * (connectivity + connectivity.T)
 
     # Compute distances
-    #distances = np.exp(-euclidean_distances(X))
+    # distances = np.exp(-euclidean_distances(X))
     distances = euclidean_distances(X)
 
     # create clustering estimators
     ms = cluster.MeanShift(bandwidth=bandwidth, bin_seeding=True)
     two_means = cluster.MiniBatchKMeans(n_clusters=25)
     ward = cluster.Ward(n_clusters=25)
-    #ward = cluster.AgglomerativeClustering(n_clusters=2,linkage='ward', connectivity=connectivity)
+    # ward = cluster.AgglomerativeClustering(n_clusters=2,linkage='ward', connectivity=connectivity)
     spectral = cluster.SpectralClustering(n_clusters=25,
                                           eigen_solver='arpack',
                                           affinity="nearest_neighbors")
@@ -107,7 +107,7 @@ for i_dataset, dataset in enumerate([mydataset]):
     affinity_propagation = cluster.AffinityPropagation(damping=.9,
                                                        preference=-200)
     
-    #average_linkage = cluster.AgglomerativeClustering(linkage="average", affinity="cityblock", n_clusters=2, connectivity=connectivity)
+    # average_linkage = cluster.AgglomerativeClustering(linkage="average", affinity="cityblock", n_clusters=2, connectivity=connectivity)
 
     for name, algorithm in [
                             ('MiniBatchKMeans', two_means),

@@ -11,7 +11,7 @@ doc = etree.parse('/home/af/Downloads/pt.stackoverflow.com/Posts.xml')
 print doc
 
 for  elt in doc.getiterator():
-    #print elt.tag
+    # print elt.tag
     for childelt in elt.getiterator():
         print childelt
     break

@@ -19,4 +19,4 @@ kdtreeclass = os.path.join(home, 'code/KdTree')
 bucketSize = 640
 partitionMethod = 'halfway'
 os.system("javac " + kdtreesource)
-os.system("java --classpath "+ os.path.join(home, 'code/') + ' ' + kdtreeclass + " " + home + " " + str(bucketSize).strip() + " " + partitionMethod)
+os.system("java --classpath " + os.path.join(home, 'code/') + ' ' + kdtreeclass + " " + home + " " + str(bucketSize).strip() + " " + partitionMethod)

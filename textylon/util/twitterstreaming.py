@@ -29,12 +29,12 @@ class StdOutListener(StreamListener):
 
     """
     def on_data(self, data):
-        forbidden =  ['\"country_code\":\"SA\"']
+        forbidden = ['\"country_code\":\"SA\"']
         for forb in forbidden:
             if forb in data:
                 return True
         
-        data = data.decode( 'unicode-escape' )
+        data = data.decode('unicode-escape')
         tfile.write(data)
         tfile.flush()
         return True
@@ -48,4 +48,4 @@ if __name__ == '__main__':
     auth.set_access_token(access_token, access_token_secret)
     
     stream = Stream(auth, l)
-    stream.filter(locations=[51,29,57,37, 45, 36,48, 39, 53,27, 61, 37, 49, 30, 61, 37], languages=['fa'])
+    stream.filter(locations=[51, 29, 57, 37, 45, 36, 48, 39, 53, 27, 61, 37, 49, 30, 61, 37], languages=['fa'])

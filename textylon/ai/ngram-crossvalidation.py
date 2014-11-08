@@ -67,8 +67,8 @@ import pylab as pl
 
 
 # matplotlib.use('Agg')
-#DATA_FOLDER = "/home/af/Downloads/20news-18828"
-#DATA_FOLDER = "/home/af/Downloads/review_polarity/txt_sentoken"
+# DATA_FOLDER = "/home/af/Downloads/20news-18828"
+# DATA_FOLDER = "/home/af/Downloads/review_polarity/txt_sentoken"
 DATA_FOLDER = '/home/af/Downloads/GeoText.2010-10-12/processed_data/meanminmax/10_clustered'
 K_FOLD = 10
 data_target = load_files(DATA_FOLDER, encoding='latin1')

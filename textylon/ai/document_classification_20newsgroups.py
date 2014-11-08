@@ -165,8 +165,8 @@ if opts.use_hashing:
                                    n_features=opts.n_features)
     X_train = vectorizer.transform(data_train.data)
 else:
-    vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5,
-                                 stop_words='english')
+    vectorizer = TfidfVectorizer(sublinear_tf=False, max_df=100,
+                                 stop_words=None, norm=None, binary=True, use_idf=False)
     X_train = vectorizer.fit_transform(data_train.data)
 duration = time() - t0
 print("done in %fs at %0.3fMB/s" % (duration, data_train_size_mb / duration))
@@ -182,7 +182,7 @@ print("n_samples: %d, n_features: %d" % X_test.shape)
 print()
 
 if opts.select_chi2:
-    print("Extracting %d best features by a chi-squared test" %
+    print("Extracting %d best features by a chi-squared test" % 
           opts.select_chi2)
     t0 = time()
     ch2 = SelectKBest(chi2, k=opts.select_chi2)

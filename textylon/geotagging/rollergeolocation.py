@@ -33,7 +33,7 @@ from collections import Counter
 import random
 from os import path
 import math
-#from datetime import datetime
+# from datetime import datetime
 import glob
 import matplotlib.path as mpath
 import matplotlib.lines as mlines
@@ -50,7 +50,7 @@ from GPy.examples import regression
 import numpy as np
 import GPy
 from GPy import kern, likelihoods
-#from GPy.models_modules.gp_regression import GPRegression
+# from GPy.models_modules.gp_regression import GPRegression
 import codecs
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.neighbors import NearestNeighbors
@@ -66,7 +66,7 @@ users_home = path.join(GEOTEXT_HOME, 'processed_data')
 testfile = path.join(users_home, 'user_info.test')
 devfile = path.join(users_home, 'user_info.dev')
 trainfile = path.join(users_home, 'user_info.train')
-userTextDirectory =  path.join(GEOTEXT_HOME, 'userText')
+userTextDirectory = path.join(GEOTEXT_HOME, 'userText')
 encoding = 'utf-8'
 records = []
 lngs = []
@@ -90,7 +90,7 @@ userText = {}
 def user_info(write_user_info=False):
     train = path.join(GEOTEXT_HOME, 'training-big.txt')
     test = path.join(GEOTEXT_HOME, 'test.txt')
-    #read train file
+    # read train file
     with codecs.open(trainfile, 'w', encoding) as trainout:
         with codecs.open(testfile, 'w', encoding) as testout:
             for f in (train, test):
@@ -102,7 +102,7 @@ def user_info(write_user_info=False):
                     for line in trainf:
                         fields = line.split('\t')
                         ll += 1
-                        if len(fields)!= 9:
+                        if len(fields) != 9:
                             l += 1
                             continue
                         user = fields[0]
@@ -119,7 +119,7 @@ def user_info(write_user_info=False):
                         text = fields[8].strip()
                         ttime = 0
                         badloc = 0
-                        locStr = lat+','+lon
+                        locStr = lat + ',' + lon
                         
                         if user in userText:
                             userText[user] = userText[user] + '\t' + text
@@ -128,7 +128,7 @@ def user_info(write_user_info=False):
                         
                         if user not in userLocation:
                             userLocation[user] = locStr
-                        #records.append((user, ttime, badloc, latitude, longitude, text))
+                        # records.append((user, ttime, badloc, latitude, longitude, text))
                         if f == train:
                             if user not in trainUsers:
                                 trainUsers[user] = locStr
@@ -154,20 +154,20 @@ def readRollerRecords():
         for line in inf:
             i += 1
             fs = line.split('\t')
-            if len(fs)!=6:
+            if len(fs) != 6:
                 j += 1
-                #print 'format error: ' + line + str(j)
+                # print 'format error: ' + line + str(j)
                 continue
             user = fs[0]
             ttime = fs[1]
             badloc = fs[2]
             latitude = fs[3].strip()
             longitude = fs[4].strip()
-            #print longitude, latitude, badloc
-            #if latitude > -75 or latitude<-125:
+            # print longitude, latitude, badloc
+            # if latitude > -75 or latitude<-125:
             #    continue
             #    pass
-            #if longitude < 25 or longitude>50:
+            # if longitude < 25 or longitude>50:
             #    continue
             #    pass
             lngs.append(longitude)
@@ -175,15 +175,15 @@ def readRollerRecords():
             text = fs[5].strip()
             
                 
-            #print time
-            #time = datetime.strptime(time,'%Y-%m-%dT%H:%M:%S')
-            #if user in userFirstTime:
+            # print time
+            # time = datetime.strptime(time,'%Y-%m-%dT%H:%M:%S')
+            # if user in userFirstTime:
             #    if time < userFirstTime[user]:
             #        userFirstTime[user] = time
             #        userLocation[user] = str(latitude).strip()+','+str(longitude).strip()
             #        userlon[user] = longitude
             #        userlat[user] = latitude
-            #else:
+            # else:
             #    userFirstTime[user] = time
             #    userLocation[user] = str(latitude).strip()+','+str(longitude).strip()
             #    userlon[user] = longitude
@@ -211,7 +211,7 @@ def distance(lat1, lon1, lat2, lon2):
     # haversine formula 
     dlon = lon2 - lon1 
     dlat = lat2 - lat1 
-    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
     c = 2 * asin(sqrt(a)) 
 
     # 6367 km is the radius of the Earth
@@ -221,38 +221,38 @@ def distance(lat1, lon1, lat2, lon2):
 def users(file, type='train'):
     with codecs.open(file, 'r', encoding) as inf:
         for line in inf:
-            #print line
+            # print line
             fields = line.split()
             user = fields[0].strip()
             lat = str(float(fields[1])).strip()
             lon = str(float(fields[2])).strip()
-            locStr = lat+','+lon
+            locStr = lat + ',' + lon
             userLocation[user] = locStr
-            if type=='train':
+            if type == 'train':
                 trainUsers[user] = locStr
-            elif type =='test':
+            elif type == 'test':
                 testUsers[user] = locStr
             elif type == 'dev':
                 devUsers[user] = locStr
     
-#print 'reading train, dev and test file'
-#users(trainfile, 'train')
-#users(devfile, 'dev')
-#users(testfile, 'test')
-#print 'total ' + str(len(userLocation)).strip() + " users."            
+# print 'reading train, dev and test file'
+# users(trainfile, 'train')
+# users(devfile, 'dev')
+# users(testfile, 'test')
+# print 'total ' + str(len(userLocation)).strip() + " users."            
 def fillUserByLocation():
     print 'users indexed by location'
-    #fill userLocations dictioanry if there are multiple users for a location they are separated by space
+    # fill userLocations dictioanry if there are multiple users for a location they are separated by space
     print 'number of '
     for user in userLocation:
         loc = userLocation[user]
         if loc in locationUser:
-            #print "Warning: we have multiple users with exactly the same location!"
+            # print "Warning: we have multiple users with exactly the same location!"
             locationUser[loc] = locationUser[loc] + " " + user
         else:
             locationUser[loc] = user
     print "the number of users/distinct locations is " + str(len(locationUser))
-#fillUserByLocation()
+# fillUserByLocation()
 
 
 def fillTextByUser(writeUserTexts=False):
@@ -275,7 +275,7 @@ def textSimilarity():
     NeighborDirectory = GEOTEXT_HOME
     # matplotlib.use('Agg')
     DATA_FOLDER = userTextDirectory
-    #DATA_FOLDER = "/GEOTEXT_HOME/af/Downloads/review_polarity/txt_sentoken"
+    # DATA_FOLDER = "/GEOTEXT_HOME/af/Downloads/review_polarity/txt_sentoken"
     K_FOLD = 10
     data_target = load_files(DATA_FOLDER, encoding=encoding)
     filenames = data_target.filenames
@@ -343,33 +343,33 @@ def textSimilarity():
         print("Extracting best features by a chi-squared test")
         ch2NumFeatures = 1000 
         ch2 = SelectKBest(chi2, k=ch2NumFeatures)
-        #print vectorizer.get_stop_words()
+        # print vectorizer.get_stop_words()
         data = ch2.fit_transform(data, target)
-        #print data
+        # print data
     
     
     KNN = 10
     nn = NearestNeighbors(n_neighbors=KNN + 1, algorithm='ball_tree').fit(data)
-    #query and data are the same so every node is counted as its most similar here
+    # query and data are the same so every node is counted as its most similar here
     distances, indices = nn.kneighbors(data)
     with codecs.open(path.join(NeighborDirectory, 'neighbors.txt'), 'w', encoding) as outf:
         nodeIndex = -1
         nodeNeighbors = []
         for neighbors in indices:
             nodeIndex += 1
-            outf.write(path.basename(filenames[nodeIndex])+' ')
+            outf.write(path.basename(filenames[nodeIndex]) + ' ')
             for neighbor in neighbors:
                 if neighbor == nodeIndex:
                     continue
                 else:
-                    outf.write(path.basename(filenames[neighbor])+' ')
+                    outf.write(path.basename(filenames[neighbor]) + ' ')
             outf.write('\n')
         
 def plot_points():
     
-    #N = 50
-    #x = np.random.rand(N)
-    #y = np.random.rand(N)
+    # N = 50
+    # x = np.random.rand(N)
+    # y = np.random.rand(N)
     x = []
     y = []
     for user in userLocation:
@@ -379,33 +379,33 @@ def plot_points():
         x.append(userlon[user])
     colors = np.random.rand(15)
     
-    area = 1 # 0 to 15 point radiuses
+    area = 1  # 0 to 15 point radiuses
     
     plt.scatter(x, y, s=area, c=colors, alpha=0.5)
     plt.show()
 
             
 def merge_text():
-    files = glob.glob(userTextDirectory+'/userText/*')
+    files = glob.glob(userTextDirectory + '/userText/*')
     texts = {}
     for file in files:
         with codecs.open(file, 'r', encoding) as inf:
             t = ''
             for line in inf:
-                t = t +' '+ line.strip()
+                t = t + ' ' + line.strip()
             texts[path.basename(file)] = t
     with codecs.open(path.join(userTextDirectory, 'linie.txt'), 'w', encoding) as outf:
         for t in texts:
-            outf.write( t + ' ||| ' + texts[t] + '\n')
+            outf.write(t + ' ||| ' + texts[t] + '\n')
         
-#merge_text()
+# merge_text()
 
 
 
 def partitionLocView(granularity=10):
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    filename = path.join(GEOTEXT_HOME, 'processed_data/')+str(granularity).strip()+'_clustered.train'
+    filename = path.join(GEOTEXT_HOME, 'processed_data/') + str(granularity).strip() + '_clustered.train'
     allpoints = []
     allpointsMinLat = []
     allpointsMaxLat = []
@@ -439,7 +439,7 @@ def partitionLocView(granularity=10):
             allpointsMinLon.append(minlon)
             allpoints.append(points)
     x = []
-    y= []
+    y = []
     for i in range(0, len(allpointsMaxLat)):
         y.append(allpointsMinLat[i])
         y.append(allpointsMinLat[i])
@@ -453,33 +453,33 @@ def partitionLocView(granularity=10):
         
         rect = mpatches.Rectangle((allpointsMinLon[i], allpointsMinLat[i]), allpointsMaxLon[i] - allpointsMinLon[i], allpointsMaxLat[i] - allpointsMinLat[i], facecolor='white')
         ax.add_artist(rect)
-        ax.set_xlim([-125, -60]) #pylab.xlim([-400, 400])
+        ax.set_xlim([-125, -60])  # pylab.xlim([-400, 400])
         ax.set_ylim([25, 50])
          
-    #colors = np.random.rand(15)
+    # colors = np.random.rand(15)
     
-    #area = 1 # 0 to 15 point radiuses
+    # area = 1 # 0 to 15 point radiuses
     
-    #plt.scatter(x, y, s=area, c=colors, alpha=0.5)
-    #ax.set_xlim([-400, -380]) #pylab.xlim([-400, 400])
-    #ax.set_ylim([-400, -380]) #pylab.ylim([-400, 400])
-    #patches = []
-    #polygon = plt.Rectangle((-400, -400), 10, 10, color='yellow') #Rectangle((-400, -400), 10, 10, color='y')
-    #patches.append(polygon)
+    # plt.scatter(x, y, s=area, c=colors, alpha=0.5)
+    # ax.set_xlim([-400, -380]) #pylab.xlim([-400, 400])
+    # ax.set_ylim([-400, -380]) #pylab.ylim([-400, 400])
+    # patches = []
+    # polygon = plt.Rectangle((-400, -400), 10, 10, color='yellow') #Rectangle((-400, -400), 10, 10, color='y')
+    # patches.append(polygon)
     
-    #pol2 = plt.Rectangle((-390, -390), 10, 10, facecolor='yellow', edgecolor='violet', linewidth=2.0)
-    #ax.add_artist(pol2)
+    # pol2 = plt.Rectangle((-390, -390), 10, 10, facecolor='yellow', edgecolor='violet', linewidth=2.0)
+    # ax.add_artist(pol2)
     
     
-    #p = collections.PatchCollection(patches) #, cmap=matplotlib.cm.jet)
-    #ax.add_collection(p)
-    #ax.xaxis.set_major_locator(ticker.MultipleLocator(20)) # (MultipleLocator(20)) 
-    #ax.yaxis.set_major_locator(ticker.MultipleLocator(20)) # (MultipleLocator(20)) 
+    # p = collections.PatchCollection(patches) #, cmap=matplotlib.cm.jet)
+    # ax.add_collection(p)
+    # ax.xaxis.set_major_locator(ticker.MultipleLocator(20)) # (MultipleLocator(20)) 
+    # ax.yaxis.set_major_locator(ticker.MultipleLocator(20)) # (MultipleLocator(20)) 
     plt.xlabel('Longitude')
     plt.ylabel('Latitude')
-    plt.title('US Map of Twitter Users mean of min & max '+str(granularity).strip()+' person per cluster')
-    plt.savefig(filename+'.png')
-    plt.show() #pylab.show()            
+    plt.title('US Map of Twitter Users mean of min & max ' + str(granularity).strip() + ' person per cluster')
+    plt.savefig(filename + '.png')
+    plt.show()  # pylab.show()            
 
 
 
@@ -488,8 +488,8 @@ def partitionLocView(granularity=10):
 
 
 def createTrainDir(granularity=10):
-    #readlocationclusters
-    filename = path.join(GEOTEXT_HOME, 'processed_data/'+str(granularity).strip()+'_clustered.train')
+    # readlocationclusters
+    filename = path.join(GEOTEXT_HOME, 'processed_data/' + str(granularity).strip() + '_clustered.train')
     allpoints = []
     allpointsMinLat = []
     allpointsMaxLat = []
@@ -527,7 +527,7 @@ def createTrainDir(granularity=10):
     os.mkdir(trainhome)
     i = 0
     for cluster in allpoints:
-        #create a directory
+        # create a directory
         i += 1
         lats = [float(location[0]) for location in cluster]
         longs = [float(location[1]) for location in cluster]
@@ -545,35 +545,36 @@ def createTrainDir(granularity=10):
         
         os.mkdir(class_dir)
         for location in cluster:
-            #find user(s) in that collection
-            locationStr = location[0]+','+location[1]
+            # find user(s) in that collection
+            locationStr = location[0] + ',' + location[1]
             userstr = locationUser[locationStr]
             if not userstr:
                 print "fatal error: something is wrong, no user for this location: " + locationStr 
             locusers = []
             if " " in userstr:
-                #multiple users separated by space in this location
+                # multiple users separated by space in this location
                 locusers = userstr.split()
             else:
-                #just one single user in this location
+                # just one single user in this location
                 locusers.append(userstr.strip())
             # for each user in this location find the text
             # groupbyusersText should be true for this to work
-            #print "writing user texts in their corresponding geographical class in: " + class_dir
+            # print "writing user texts in their corresponding geographical class in: " + class_dir
             for user in locusers:
-                with codecs.open(path.join(class_dir, user), 'w', encoding) as inf:
-                    inf.write(userText[user])
+                if user in trainUsers:
+                    with codecs.open(path.join(class_dir, user), 'w', encoding) as inf:
+                        inf.write(userText[user])
     print "train directories created and class median and mean lat,lon computed. trainfile: " + filename
-#createTrainDir()
+# createTrainDir()
 def createTestDevDir(type='test'):
     print 'creating ' + type + ' collection.'
-    t_home = path.join(users_home, type+'/'+type)
+    t_home = path.join(users_home, type + '/' + type)
     shutil.rmtree(t_home, ignore_errors=True)
     os.mkdir(t_home)
     userCollection = {}
-    if type=='test':
+    if type == 'test':
         userCollection = testUsers
-    elif type=='dev':
+    elif type == 'dev':
         userCollection = devUsers
     else:
         print "fatal error in createTestDevDir type:" + type
@@ -583,8 +584,8 @@ def createTestDevDir(type='test'):
         text = userText[user]
         with codecs.open(path.join(t_home, user), 'w', encoding) as inf:
             inf.write(text)
-#createTestDevDir('test')
-#createTestDevDir('dev')
+# createTestDevDir('test')
+# createTestDevDir('dev')
 
 def size_mb(docs):
     return sum(len(s.encode(encoding)) for s in docs) / 1e6
@@ -592,7 +593,7 @@ def size_mb(docs):
 
 
 def classify(granularity=10):
-    trainDir = path.join(GEOTEXT_HOME, 'processed_data/'+str(granularity).strip()+'_clustered/')
+    trainDir = path.join(GEOTEXT_HOME, 'processed_data/' + str(granularity).strip() + '_clustered/')
     testDir = path.join(GEOTEXT_HOME, 'processed_data/test')
     data_train = load_files(trainDir, encoding=encoding)
     target = data_train.target
@@ -634,7 +635,7 @@ def classify(granularity=10):
     print("done in %fs at %0.3fMB/s" % (duration, data_test_size_mb / duration))
     print("n_samples: %d, n_features: %d" % X_test.shape)
     print()
-    chi = True
+    chi = False
     if chi:
         k = 500000
         print("Extracting %d best features by a chi-squared test" % 0)
@@ -647,7 +648,7 @@ def classify(granularity=10):
         print()
         
     feature_names = np.asarray(vectorizer.get_feature_names())
-    #clf = LinearSVC(loss='l2', penalty='l2', dual=True, tol=1e-3)
+    # clf = LinearSVC(loss='l2', penalty='l2', dual=True, tol=1e-3)
     clf = RidgeClassifier(tol=1e-2, solver="auto")
     print('_' * 80)
     print("Training: ")
@@ -666,8 +667,8 @@ def classify(granularity=10):
     test_time = time() - t0
     print("test time:  %0.3fs" % test_time)
 
-    #score = metrics.f1_score(y_test, pred)
-    #print("f1-score:   %0.3f" % score)
+    # score = metrics.f1_score(y_test, pred)
+    # print("f1-score:   %0.3f" % score)
 
     if hasattr(clf, 'coef_'):
         print("dimensionality: %d" % clf.coef_.shape[1])
@@ -691,7 +692,7 @@ def classify(granularity=10):
         lon = float(location[1])
         prediction = categories[pred[i]]
         confidence = scores[i][pred[i]] - mean(scores[i])
-        randomConfidence = scores[i][random.randint(0, len(categories)-1)]
+        randomConfidence = scores[i][random.randint(0, len(categories) - 1)]
         confidences.append(confidence)
         randomConfidences.append(randomConfidence)
         medianlat = classLatMedian[prediction]  
@@ -708,13 +709,13 @@ def classify(granularity=10):
     print "Median distance is " + str(median(distances))
     fig, (ax1, ax2) = plt.subplots(nrows=2, sharex=True)
     
-    plt.xlim(0,4000)
+    plt.xlim(0, 4000)
     plt.ylim(0, 2)
     ax1.scatter(distances, confidences)
     ax2.bar(distances, confidences)
     plt.savefig(path.join(GEOTEXT_HOME, 'confidence.png'))
    
-#classify()
+# classify()
 
 def loadGPData(DO_SVD=True, Reduction_D=100):
     data = {}
@@ -788,7 +789,7 @@ def loadGPData(DO_SVD=True, Reduction_D=100):
 def localizeGP(max_iters=100, kernel=None, optimize=True, plot=False):
     """Predict the location of a robot given wirelss signal strength readings."""
     data = loadGPData()
-    #data = GPy.util.datasets.robot_wireless()
+    # data = GPy.util.datasets.robot_wireless()
     print data
     # create simple GP Model
     m = GPy.models.GPRegression(data['Y'], data['X'], kernel=kernel)
@@ -814,11 +815,11 @@ def localizeGP(max_iters=100, kernel=None, optimize=True, plot=False):
         sumDist += distance(lat1, lon1, lat2, lon2)
     averageDist = float(sumDist) / Xpredict.shape[0]
     print "average distance is: " + str(averageDist)
-    #sse = ((data['Xtest'] - Xpredict)**2).sum()
-    #aae = np.absolute(data['Xtest'] - Xpredict).sum()
+    # sse = ((data['Xtest'] - Xpredict)**2).sum()
+    # aae = np.absolute(data['Xtest'] - Xpredict).sum()
     print m
-    #print('Sum of squares error on test data: ' + str(sse))
-    #print('average absolute error on test data: ' + str(aae))
+    # print('Sum of squares error on test data: ' + str(sse))
+    # print('average absolute error on test data: ' + str(aae))
     if plot:
         fig = pb.figure(None)
         pb.title('')
@@ -826,7 +827,7 @@ def localizeGP(max_iters=100, kernel=None, optimize=True, plot=False):
     return m
 def wireless(max_iters=100, kernel=None, optimize=True, plot=True):
     """Predict the location of a robot given wirelss signal strength readings."""
-    #data = loadGPData()
+    # data = loadGPData()
     data = GPy.util.datasets.robot_wireless()
     print data
     # create simple GP Model
@@ -845,10 +846,10 @@ def wireless(max_iters=100, kernel=None, optimize=True, plot=True):
         pb.legend(('True Location', 'Predicted Location'))
         
 
-    #sse = ((data['Xtest'] - Xpredict)**2).sum()
+    # sse = ((data['Xtest'] - Xpredict)**2).sum()
     aae = np.absolute(data['Xtest'] - Xpredict).sum()
     print m
-    #print('Sum of squares error on test data: ' + str(sse))
+    # print('Sum of squares error on test data: ' + str(sse))
     print('average absolute error on test data: ' + str(aae))
     if plot:
         fig = pb.figure(None)
@@ -859,10 +860,10 @@ def wireless(max_iters=100, kernel=None, optimize=True, plot=True):
 def wirelessSGD(max_iters=100, kernel=None, optimize=True, plot=True):
     """Predict the location of a robot given wirelss signal strength readings."""
     data = loadGPData()
-    #data = GPy.util.datasets.robot_wireless()
+    # data = GPy.util.datasets.robot_wireless()
     print data
     # create simple GP Model
-    m = GPy.models.GPMultioutputRegression(data['Y'], data['X'],  normalize_X=True, normalize_Y=True)
+    m = GPy.models.GPMultioutputRegression(data['Y'], data['X'], normalize_X=True, normalize_Y=True)
 
     # optimize
     if optimize:
@@ -877,10 +878,10 @@ def wirelessSGD(max_iters=100, kernel=None, optimize=True, plot=True):
         pb.legend(('True Location', 'Predicted Location'))
         
 
-    #sse = ((data['Xtest'] - Xpredict)**2).sum()
+    # sse = ((data['Xtest'] - Xpredict)**2).sum()
     aae = np.absolute(data['Xtest'] - Xpredict).sum()
     print m
-    #print('Sum of squares error on test data: ' + str(sse))
+    # print('Sum of squares error on test data: ' + str(sse))
     print('average absolute error on test data: ' + str(aae))
     if plot:
         fig = pb.figure(None)
@@ -891,25 +892,25 @@ def finalUserTextFile(home):
     fname = path.join(home, 'loctext.txt')
     with codecs.open(fname, 'w', encoding) as inf:
         pass
-        #TODO
+        # TODO
 user_info()
-#partitionLocView(2560)
+# partitionLocView(2560)
 
-#readGeoTextRecords()
+# readGeoTextRecords()
 print 'reading train, dev and test file'
 users(trainfile, 'train')
-#users(devfile, 'dev')
+# users(devfile, 'dev')
 users(testfile, 'test')
 print 'total ' + str(len(userLocation)).strip() + " users."
 fillUserByLocation()
-#fillTextByUser()            
+# fillTextByUser()            
 
 def asclassification(granularity=10):    
     createTrainDir(granularity)
     createTestDevDir('test')
-    #createTestDevDir('dev')
+    # createTestDevDir('dev')
     classify(granularity)
-    partitionLocView(granularity)
+    #partitionLocView(granularity)
     
 
 asclassification(640)

@@ -12,19 +12,19 @@ import unicodedata
 home = '/home/af/Downloads/alta/'
 option = 10
 
-if option==1:
+if option == 1:
     with codecs.open('train.txt', 'r', 'utf-8') as inf:
         with codecs.open('t.txt', 'w', 'utf-8') as outf:
             for line in inf:
-                fields  = line.split('|||')
-                #print fields[0], fields[1], fields[2]
+                fields = line.split('|||')
+                # print fields[0], fields[1], fields[2]
                 if len(fields) == 3:
                     outf.write(fields[2].strip() + '\n')
                 elif len(fields) == 4:
                     outf.write(fields[2].strip() + ' ' + fields[3].strip() + '\n')
                 else:
                     print line
-if option==2:
+if option == 2:
     with codecs.open('t.xml', 'r', 'utf-8') as inf:
         with codecs.open('locations.txt', 'w', 'utf-8') as outf:
             for line in inf:
@@ -36,11 +36,11 @@ if option==2:
                         if i == 0:
                             outLoc = d
                         else:
-                            outLoc = d+ str(i+1).strip()
+                            outLoc = d + str(i + 1).strip()
                         outf.write(outLoc + ' ')
                 outf.write('\n')
 
-if option==3:
+if option == 3:
     locations = None
     tweetIds = []
     with codecs.open('locations.txt', 'r', 'utf-8') as locf:
@@ -63,7 +63,7 @@ if option==3:
                 location = 'NONE'
             outf.write(tweetIds[i] + ',' + location + '\n') 
     
-if option==4:
+if option == 4:
     cnt = Counter()
     with codecs.open('AU.txt', 'r', 'utf-8') as inf:
         for line in inf:
@@ -73,7 +73,7 @@ if option==4:
                     cnt[word] += 1
     print cnt.most_common(200)
 
-if option==5:
+if option == 5:
     ids = []
     trainLoc = {}
     trainText = {}
@@ -88,17 +88,17 @@ if option==5:
     trueposNum = 0
     with codecs.open('Train_Data_2.txt', 'r', 'utf-8') as inf:
         for line in inf:
-            fields  = line.split('|||')
+            fields = line.split('|||')
             ids.append(fields[0].strip())
-            #print fields[0], fields[1], fields[2]
+            # print fields[0], fields[1], fields[2]
             ulocs = Counter(fields[1].strip().split())            
             nlocs = []
             for uloc in ulocs:
                 nlocs.append(uloc)
                 for i in range(2, ulocs[uloc] + 1):                
-                    nlocs.append(uloc+str(i).strip())
+                    nlocs.append(uloc + str(i).strip())
             trainLoc[fields[0].strip()] = nlocs    
-            #trainLoc[fields[0].strip()] = fields[1].strip().split()
+            # trainLoc[fields[0].strip()] = fields[1].strip().split()
             trainText[fields[0].strip()] = fields[2].strip()
     with codecs.open('merge_crf++_stanfordner_None_train.txt', 'r', 'utf-8') as inf:
         for line in inf:
@@ -146,9 +146,9 @@ Created on 10 Sep 2014
 
 @author: af
 '''
-if option==6:
-    ifname='Train_Data_2.txt'
-    ofname='links.txt'
+if option == 6:
+    ifname = 'Train_Data_2.txt'
+    ofname = 'links.txt'
     ifname = os.path.join(home, ifname)
     ofname = os.path.join(home, ofname)
     with codecs.open(ofname, 'w', 'utf8') as outf:
@@ -157,9 +157,9 @@ if option==6:
                 t = s[s.find("http://"):]
                 t = t[:t.find(" ")].strip()
                 if t != '':
-                    outf.write(t+'\n')
+                    outf.write(t + '\n')
 
-if option==7:
+if option == 7:
     with codecs.open(os.path.join(home, 'trainlinks.txt'), 'r', 'utf-8') as inf:
         with codecs.open(os.path.join(home, 'trainurltext.txt'), 'w', 'utf-8') as outf:
             for url in inf:
@@ -175,40 +175,40 @@ if option==7:
                         g = Goose()
                         article = g.extract(url=url)
                         text = article.cleaned_text
-                        outf.write(text +'\n')
+                        outf.write(text + '\n')
                     except:
                         pass
 
-if option==8:
+if option == 8:
     dic = []
     with codecs.open(os.path.join(home, 'aunz.txt'), 'r', 'utf-8') as inf:
         for line in inf:
-            #words = line.split()
-            #dic.extend(words)
+            # words = line.split()
+            # dic.extend(words)
             dic.append(line.strip())
     dic = set(dic)
     with codecs.open(os.path.join(home, 'certainly detect these locations - compiled from geonames of au and nz.txt'), 'w', 'utf-8') as outf:
         for i in dic:
-            outf.write(i+'\n')
+            outf.write(i + '\n')
 
-if option==9:
+if option == 9:
     dic = []
     with codecs.open(os.path.join(home, 'aunz.txt'), 'r', 'utf-8') as inf:
         for line in inf:
             words = line.split()
             dic.extend(words)
-            #dic.append(line.strip())
+            # dic.append(line.strip())
     c = Counter(dic)
     sorted = c.most_common()
     with codecs.open(os.path.join(home, 'needs manual harassing sorted by frequency ascending - compiled from geonames of au and nz.txt'), 'w', 'utf-8') as outf:
         for i in sorted:
             word , freq = i
-            outf.write(word + '\t' + str(freq).strip()+'\n')
+            outf.write(word + '\t' + str(freq).strip() + '\n')
     
     text = ''
     with codecs.open(os.path.join(home, 'Test_Data.txt'), 'r', 'utf-8') as inf:
         text = inf.read()
-    words = re.split(" |\||\n|\r|\t|#|/|\(|\)|\@|\'|\"|\!|\?",text)
+    words = re.split(" |\||\n|\r|\t|#|/|\(|\)|\@|\'|\"|\!|\?", text)
     words = [w.lower() for w in words]
     words = set(words)
     print words
@@ -219,9 +219,9 @@ if option==9:
         for i in sorted:
             word , freq = i
             if word.lower() in words:
-                outf.write(word + '\t' + str(freq).strip()+'\n')
+                outf.write(word + '\t' + str(freq).strip() + '\n')
 
-if option==10:
+if option == 10:
     print "Usage: python alta.py test-file result-file dictionary-file outputfile"
     if len(sys.argv) != 5:
         print "Fatal error: wrong number of arguments."
@@ -242,12 +242,12 @@ if option==10:
     
     for line in testLines:
         fields = line.split('|||')
-        #Felix's normalization translate doesn't work with unicode here
-        #fields[1] = fields[1].lower().translate(None, "#'\"@") 
+        # Felix's normalization translate doesn't work with unicode here
+        # fields[1] = fields[1].lower().translate(None, "#'\"@") 
         if len(fields) < 2:
             continue
         fields[1] = fields[1].lower()
-        fields[1] = fields[1].replace('#','')
+        fields[1] = fields[1].replace('#', '')
         fields[1] = fields[1].replace('\"', '')
         fields[1] = fields[1].replace('@', '')
         testDataDic[fields[0]] = ' '.join(re.split("\W+", fields[1]))
@@ -259,11 +259,11 @@ if option==10:
     for tweetID in resultDic:
         tweet_text = testDataDic[tweetID]
         detected_locations = resultDic[tweetID] 
-        #order matters here
+        # order matters here
         for dicItem in gazetter:
-            #check if it is in tweet_text
+            # check if it is in tweet_text
             if dicItem in tweet_text:
-                #check if items are in results, if not add each token
+                # check if items are in results, if not add each token
                 tokens = dicItem.split()
                 for token in tokens:
                     if token in detected_locations:
@@ -286,7 +286,7 @@ if option==10:
     
     print "Detected " + str(newItemCount) + " new locations."
     
-    #write the newResultDic to the outputfile
+    # write the newResultDic to the outputfile
     print "writing the final results in " + outputfile
     with codecs.open(outputfile, 'w', encoding=encoding) as outf:
         for tweetID in sorted(newResultDic):

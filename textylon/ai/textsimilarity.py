@@ -70,7 +70,7 @@ import pylab as pl
 
 # matplotlib.use('Agg')
 DATA_FOLDER = "/home/af/Downloads/20news-18828"
-#DATA_FOLDER = "/home/af/Downloads/review_polarity/txt_sentoken"
+# DATA_FOLDER = "/home/af/Downloads/review_polarity/txt_sentoken"
 K_FOLD = 10
 data_target = load_files(DATA_FOLDER, encoding='latin1')
 DO_PCA = False
@@ -127,14 +127,14 @@ if DO_NMF:
 print("Extracting best features by a chi-squared test")
 ch2NumFeatures = 1000 
 ch2 = SelectKBest(chi2, k=ch2NumFeatures)
-#print vectorizer.get_stop_words()
+# print vectorizer.get_stop_words()
 data = ch2.fit_transform(data, target)
-#print data
+# print data
 
 
 KNN = 5
 nn = NearestNeighbors(n_neighbors=KNN + 1, algorithm='ball_tree').fit(data.todense())
-#query and data are the same so every node is counted as its most similar here
+# query and data are the same so every node is counted as its most similar here
 distances, indices = nn.kneighbors(data.todense())
 
 nodeIndex = -1
@@ -150,7 +150,7 @@ for neighbors in indices:
             neighborLabelIndex = target[neighbor]
         if neighborLabelIndex == nodeLabelIndex:
             nodeHomophily += 1
-    nodeHomophilies.append(float(nodeHomophily)/KNN)
+    nodeHomophilies.append(float(nodeHomophily) / KNN)
 average = sum(nodeHomophilies) / len(nodeHomophilies)
 varience = sum((average - value) ** 2 for value in nodeHomophilies) / len(nodeHomophilies)
 

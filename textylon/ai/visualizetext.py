@@ -70,7 +70,7 @@ import pylab as pl
 
 
 # matplotlib.use('Agg')
-#DATA_FOLDER = "/home/af/Downloads/20news-18828"
+# DATA_FOLDER = "/home/af/Downloads/20news-18828"
 DATA_FOLDER = "/home/af/Downloads/review_polarity/txt_sentoken"
 K_FOLD = 10
 data_target = load_files(DATA_FOLDER, encoding='latin1')
@@ -132,20 +132,20 @@ if DO_NMF:
 
 
 
-#data = data.todense()
-#print type(data)
+# data = data.todense()
+# print type(data)
 x = data[:, 0]
 y = data[:, 1]
 z = np.array(data_target.target)
 
-fig = plt.figure(figsize=(6,6))
+fig = plt.figure(figsize=(6, 6))
 ax = fig.add_subplot(111)
-ax.set_title("Positive vs Negative",fontsize=14)
-ax.set_xlabel("XAVG",fontsize=12)
-ax.set_ylabel("YAVG",fontsize=12)
-ax.grid(True,linestyle='-',color='0.75')
+ax.set_title("Positive vs Negative", fontsize=14)
+ax.set_xlabel("XAVG", fontsize=12)
+ax.set_ylabel("YAVG", fontsize=12)
+ax.grid(True, linestyle='-', color='0.75')
 # scatter with colormap mapping to z value
-ax.scatter(x,y,s=60,c=z, marker = 'o', cmap = cm.get_cmap("jet") );
+ax.scatter(x, y, s=60, c=z, marker='o', cmap=cm.get_cmap("jet"));
 
 plt.show()
 

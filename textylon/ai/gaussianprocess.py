@@ -4,7 +4,7 @@ Created on 16 Sep 2014
 @author: af
 '''
 
-#GPy.models_modules.gp_multioutput_regression
+# GPy.models_modules.gp_multioutput_regression
 
 import pylab as pb
 pb.ion()
@@ -32,7 +32,7 @@ def loadGeolocationDataset():
 def localize(max_iters=100, kernel=None, optimize=True, plot=True):
     """Predict the location of a robot given wirelss signal strength readings."""
     data = GPy.util.datasets.robot_wireless()
-    #print data
+    # print data
     # create simple GP Model
     m = GPy.models.GPRegression(data['Y'], data['X'], kernel=kernel)
 
@@ -49,7 +49,7 @@ def localize(max_iters=100, kernel=None, optimize=True, plot=True):
         pb.legend(('True Location', 'Predicted Location'))
         
 
-    sse = ((data['Xtest'] - Xpredict)**2).sum()
+    sse = ((data['Xtest'] - Xpredict) ** 2).sum()
 
     print m
     print('Sum of squares error on test data: ' + str(sse))
@@ -58,5 +58,5 @@ def localize(max_iters=100, kernel=None, optimize=True, plot=True):
     raw_input()
     return m
 
-#loatGeolocationDataset()
+# loatGeolocationDataset()
 localize()
