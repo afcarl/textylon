@@ -14,6 +14,7 @@ from scipy import linalg
 from scipy.stats import threshold
 from sklearn import mixture
 import copy
+from scipy.io import mmwrite
 from math import radians, cos, sin, asin, sqrt
 from sklearn import cross_validation
 from sklearn import metrics
@@ -40,6 +41,7 @@ from sklearn.utils.extmath import density
 import scipy.sparse as sparse
 from sklearn.neighbors import NearestNeighbors
 from sklearn.feature_selection import SelectKBest
+import group_lasso 
 # from extract import get_tokens
 # from time import time
 from math import sqrt
@@ -891,7 +893,7 @@ def ppmiTransform(matrix):
         else:
             matrix[row, col] = 0.0
     print "PPMI transform finished successfully."    
-def feature_extractor(encoding='utf-8', use_mention_dictionary=False, use_idf=True, norm=None, binary=False, sublinear_tf=True, min_df=1, max_df=1.0, BuildCostMatrices=False, vectorizer=None):
+def feature_extractor(encoding='utf-8', use_mention_dictionary=False, use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=1, max_df=1.0, BuildCostMatrices=False, vectorizer=None):
     '''
     read train, dev and test directories and extract textual features using tfidfvectorizer.
     '''
@@ -960,6 +962,11 @@ def feature_extractor(encoding='utf-8', use_mention_dictionary=False, use_idf=Tr
             vectorizer = TfidfVectorizer(use_idf=use_idf, norm=norm, binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=max_df, ngram_range=(1, 1), stop_words=None)
     
     X_train = vectorizer.fit_transform(data_train.data)
+    print type(vectorizer.vocabulary_)
+    keys = vectorizer.vocabulary_.keys()
+    for i in range(0, 10):
+        print keys[i], vectorizer.vocabulary_[keys[i]]
+        
     '''
     #test the sum of a doc feature values
     test = X_train[0].todense()
@@ -1002,7 +1009,7 @@ def feature_extractor(encoding='utf-8', use_mention_dictionary=False, use_idf=Tr
             
     chi = True
     if chi:
-        k = 10000
+        k = 20000
         print("Extracting %d best features by a chi-squared test" % k)
         t0 = time.time()
         ch2 = SelectKBest(chi2, k=k)
@@ -1098,7 +1105,7 @@ def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_t
     if clf==None:
         # clf = LinearSVC(multi_class='ovr', class_weight='auto', C=1.0, loss='l2', penalty='l1', dual=False, tol=1e-3)
         #clf = linear_model.LogisticRegression(C=1.0, penalty='l2')
-        clf = SGDClassifier(loss='log',penalty='l2', learning_rate='optimal', n_iter=5, shuffle=False, n_jobs=20)
+        clf = SGDClassifier(loss='log', alpha=0.000001, penalty='l1', learning_rate='optimal', n_iter=5, shuffle=False, n_jobs=20)
         # clf = MultiTaskLasso()
         # clf = ElasticNet()
         # clf = linear_model.Lasso(alpha = 0.1)
@@ -1488,7 +1495,7 @@ def classificationBench(granularity, partitionMethod, use_mention_dictionary=Fal
     '''
 def asclassification(granularity, partitionMethod, use_mention_dictionary=False):
 
-    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1', use_mention_dictionary=use_mention_dictionary, max_df=1.0, min_df=2)    
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1', use_mention_dictionary=use_mention_dictionary, max_df=3, min_df=2)    
     preds, probs, U_test, meanTest, medianTest, meanDev, medianDev = classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity)
     if len(sys.argv) == 1 or sys.argv[1] != 'server':
         partitionLocView(granularity=granularity, partitionMethod=partitionMethod)
@@ -3223,46 +3230,88 @@ def test_re():
     #print mentionsList[:-1]
     print len(mentionsList)
 
-def group_lasso():
+def spams_group_lasso():
     import spams
     import numpy as np
     import scipy.sparse as ssp
     myfloat=float
-    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1', use_mention_dictionary=False, min_df=2, max_df=10)
+    
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1', use_mention_dictionary=False, min_df=1, max_df=1.0, norm=None)
     # X should be n_feature x n_sample in spams
-    X_train = normalize(X_train, norm='l2')
-    X = np.asfortranarray(X_train.todense())
+    #X_train = normalize(X_train, norm='l2')
+    X_train = X_train.todense()
+    X = np.asfortranarray(X_train)
+    X = spams.normalize(X)
+    Y_train = Y_train.reshape((Y_train.shape[0], 1))
     #X = np.asfortranarray(X - np.tile(np.mean(X,0),(X.shape[0],1)),dtype=myfloat)
     #X = spams.normalize(X1)
+    Y = np.asfortranarray(np.ceil(5 * np.random.random(size = (Y_train.shape[0],1))) - 1,dtype=myfloat)
+    for i in range(0, Y.shape[0]):
+        Y[i, 0] = Y_train[i, 0]
     
-    Y = np.asfortranarray(Y_train.reshape(Y_train.shape[0], 1))
-    
+    # Multi-Class classification
+
+    param = {'numThreads' : -1,'verbose' : True,
+             'lambda1' : 0.05, 'it0' : 10, 'max_it' : 100,
+             'L0' : 0.1, 'tol' : 1e-3, 'intercept' : False,
+             'pos' : False}
+    param['loss'] = 'multi-logistic'
+    param['regul'] = 'l1'
+    param['lambda1'] = 0.01
+
+    print '\nFISTA + Multi-Class Logistic l1'
+    print param
+    nclasses = np.max(Y[:])+1
+    W0 = np.zeros((X.shape[1],nclasses * Y.shape[1]),dtype=myfloat,order="FORTRAN")
+    (W, optim_info) = spams.fistaFlat(Y,X,W0,True,**param)
+    X_test = X_test.todense()
+    results = np.dot(X_test, W)
+    preds = np.argmax(results, axis=1)
+    loss(preds, U_test)
+    print 'mean loss: %f, mean relative duality_gap: %f, number of iterations: %f' %(np.mean(optim_info[0,:]),np.mean(optim_info[2,:]),np.mean(optim_info[3,:]))
+    Tracer()()
+    '''
+    # Multi-Class classification
+
     param = {'numThreads' : -1,'verbose' : True,
              'lambda1' : 0.05, 'it0' : 10, 'max_it' : 200,
              'L0' : 0.1, 'tol' : 1e-3, 'intercept' : False,
              'pos' : False}
-
-    nclasses = np.max(Y[:])+1
-    print "the number of classes is " + str(nclasses)
-    W0 = np.zeros((X.shape[1],nclasses * Y.shape[1]),dtype=myfloat,order="FORTRAN")
-    Tracer()()
-    # Multi-Class classification
-    
-    
-    
+    param['loss'] = 'multi-logistic'
     param['regul'] = 'l1'
-    param['regul'] = 'l1'
-    param['loss'] = 'weighted-logistic'
     param['lambda1'] = 0.01
-    param['loss'] = 'logistic'
-    #param['loss'] = 'multi-logistic'
+    np.random.seed(0)
+    m = 100;n = 200
+    X = np.asfortranarray(np.random.normal(size = (m,n)))
+    X = np.asfortranarray(X - np.tile(np.mean(X,0),(X.shape[0],1)),dtype=myfloat)
+    X = spams.normalize(X)
+    Y = np.asfortranarray(np.ceil(5 * np.random.random(size = (100,1))) - 1,dtype=myfloat)
     print '\nFISTA + Multi-Class Logistic l1'
+    nclasses = np.max(Y[:])+1
+    W0 = np.zeros((X.shape[1],nclasses * Y.shape[1]),dtype=myfloat,order="FORTRAN")
     (W, optim_info) = spams.fistaFlat(Y,X,W0,True,**param)
+    
     print 'mean loss: %f, mean relative duality_gap: %f, number of iterations: %f' %(np.mean(optim_info[0,:]),np.mean(optim_info[2,:]),np.mean(optim_info[3,:]))
+    Tracer()()
     # can be used of course with other regularization functions, intercept,...
-
-
-        
+    '''
+def fabian_glasso():
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1', use_mention_dictionary=False, min_df=1, max_df=10, norm='l2')
+    alpha = .1
+    X = normalize(X_train).todense()
+    Y_train = Y_train.reshape((Y_train.shape[0], 1))
+    groups = np.r_[[0, 0], np.arange(X.shape[1] - 2)]
+    print groups
+    coef = group_lasso.group_lasso(X, Y_train, alpha, groups, max_iter=100, rtol=None, verbose=True)
+    Tracer()()
+def save_matlab():
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1', use_mention_dictionary=False, min_df=1, max_df=1.0)
+    Y_train = Y_train.reshape((Y_train.shape[0], 1))
+    Y_test = Y_test.reshape((Y_test.shape[0], 1))
+    mmwrite(path.join(GEOTEXT_HOME, 'X_train.mtx'), X_train.todense())
+    mmwrite(path.join(GEOTEXT_HOME, 'Y_train.mtx'), Y_train)
+    mmwrite(path.join(GEOTEXT_HOME, 'X_test.mtx'), X_test.todense())
+    mmwrite(path.join(GEOTEXT_HOME, 'Y_test.mtx'), Y_test)
 #test_re()
 # euclidean()
 # cross_validate()
@@ -3270,8 +3319,9 @@ def group_lasso():
 # sys.exit()
 # normalizeText()
 initialize(partitionMethod='median', granularity=300, encoding='latin', write=False)
-group_lasso()    
-
+#save_matlab()    
+#fabian_glasso()
+spams_group_lasso()
 #iterative_collective_classification()
 # wordDist()
 # matrix_test()
