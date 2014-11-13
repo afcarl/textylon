@@ -808,9 +808,9 @@ def dataSpaceModification(Y_train, U_train):
             
         
 def loss(preds, U_test, loss='median'):
-    if len(preds) != len(testUsers): 
+    if len(preds) != len(U_test): 
         print "The number of test sample predictions is: " + str(len(preds))
-        print "The number of test samples is: " + str(len(testUsers))
+        print "The number of test samples is: " + str(len(U_test))
         print "fatal error!"
         sys.exit()
     sumMeanDistance = 0
@@ -1007,7 +1007,7 @@ def feature_extractor(encoding='utf-8', use_mention_dictionary=False, use_idf=Tr
         ppmiTransform(X_test)
     
             
-    chi = True
+    chi = False
     if chi:
         k = 20000
         print("Extracting %d best features by a chi-squared test" % k)
@@ -1019,8 +1019,8 @@ def feature_extractor(encoding='utf-8', use_mention_dictionary=False, use_idf=Tr
         print("done in %fs" % (time.time() - t0))
         print()
         # feature_names = np.asarray(vectorizer.get_feature_names())
-    #feature_names = np.asarray(vectorizer.get_feature_names())
-    feature_names = None
+    feature_names = np.asarray(vectorizer.get_feature_names())
+
     DO_SVD = False
     Reduction_D = 1000
     if DO_SVD:
@@ -3148,10 +3148,45 @@ def extract_mentions(k=0):
     token_pattern = r"(?u)\b\w\w+\b"
     #token_pattern = "[\@\#]+\w\w+\b"
     token_pattern = re.compile(token_pattern)
-    #mentionsList = [word for word in token_pattern.findall(text) if word.startswith('user_')]
-    mentionsList = [word for word in token_pattern.findall(text)]
+    mentionsList = [word for word in token_pattern.findall(text) if word.startswith('user_')]
+    #mentionsList = [word for word in token_pattern.findall(text)]
     mentionsDic = Counter(mentionsList)
     mentions = [word for word in mentionsDic if mentionsDic[word] > k]
+def spams_groups(feature_names, X_train,type, k=0):
+    if type=="mentions":
+        print "building feature group memberships"
+        print "the number of features is " + str(len(feature_names))    
+        indices = [i for i,feature in enumerate(feature_names) if feature.startswith('user_')]
+        
+        ngroups = len(indices)
+        print "the number of groups is " + str(ngroups)
+        groupDesign = X_train[:,indices ]
+        eta_g = np.ones(ngroups,dtype=float)
+        groups = sparse.csc_matrix(np.zeros((ngroups,ngroups)),dtype = np.bool)
+        groups_var = sparse.csc_matrix(X_train.transpose().dot(groupDesign), dtype=np.bool)
+        graph = {'eta_g': eta_g,'groups' : groups,'groups_var' : groups_var}
+        return graph
+    elif type=="count":
+        X_train2, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names2 = feature_extractor(encoding='latin1', use_mention_dictionary=False, min_df=1, max_df=1.0, norm=None, binary=True, use_idf=False, sublinear_tf=False)
+        counts = X_train2.sum(axis=0)
+        ngroups = counts.max() - counts.min() + 1
+        print "the number of features is " + str(len(feature_names2))
+        if len(feature_names)!=len(feature_names2):
+            print "fatal error"
+            sys.exit() 
+        print "the number of groups is " + str(ngroups)
+        #eta_g = np.ones(ngroups,dtype=float)
+        #eta_g = np.arange(1, ngroups + 1,dtype=float)
+        print "np.log + 0.5"
+        eta_g = np.log(np.arange(1, ngroups + 1,dtype=float)) + 0.5
+        groups = sparse.csc_matrix(np.zeros((ngroups,ngroups)),dtype = np.bool)
+        groups_var = sparse.csc_matrix(np.zeros((len(feature_names),ngroups)),dtype = np.bool)
+        for i in range(0, len(feature_names)):
+            groups_var[i, int(counts[0, i])- counts.min()] = 1
+        graph = {'eta_g': eta_g,'groups' : groups,'groups_var' : groups_var}
+        return graph
+        
+        
     
 def iterative_collective_classification(encoding='latin1', granularity=300, partitionMethod='median'):
     global feature_names
@@ -3237,6 +3272,9 @@ def spams_group_lasso():
     myfloat=float
     
     X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(encoding='latin1', use_mention_dictionary=False, min_df=1, max_df=1.0, norm=None)
+    extract_mentions()
+    #graph = spams_groups(feature_names,X_train,type="mentions", k=0)
+    graph = spams_groups(feature_names,X_train,type="count", k=0)
     # X should be n_feature x n_sample in spams
     #X_train = normalize(X_train, norm='l2')
     X_train = X_train.todense()
@@ -3256,19 +3294,31 @@ def spams_group_lasso():
              'L0' : 0.1, 'tol' : 1e-3, 'intercept' : False,
              'pos' : False}
     param['loss'] = 'multi-logistic'
-    param['regul'] = 'l1'
-    param['lambda1'] = 0.01
+    param['regul'] = 'graph'
+    param['lambda1'] = 0.0000001
 
     print '\nFISTA + Multi-Class Logistic l1'
     print param
     nclasses = np.max(Y[:])+1
     W0 = np.zeros((X.shape[1],nclasses * Y.shape[1]),dtype=myfloat,order="FORTRAN")
-    (W, optim_info) = spams.fistaFlat(Y,X,W0,True,**param)
+    #(W, optim_info) = spams.fistaFlat(Y,X,W0,True,**param)
+    (W, optim_info) = spams.fistaGraph(Y,X,W0,graph,True,**param)
     X_test = X_test.todense()
     results = np.dot(X_test, W)
     preds = np.argmax(results, axis=1)
+    print "test results"
     loss(preds, U_test)
+    print "development results"
+    X_dev = X_dev.todense()
+    results = np.dot(X_dev, W)
+    preds = np.argmax(results, axis=1)
+    loss(preds, U_dev)
+    print "train results"
+    results = np.dot(X_train, W)
+    preds = np.argmax(results, axis=1)
+    loss(preds, U_train)
     print 'mean loss: %f, mean relative duality_gap: %f, number of iterations: %f' %(np.mean(optim_info[0,:]),np.mean(optim_info[2,:]),np.mean(optim_info[3,:]))
+    print "mindf 1  graph e-7"
     Tracer()()
     '''
     # Multi-Class classification
@@ -3322,6 +3372,7 @@ initialize(partitionMethod='median', granularity=300, encoding='latin', write=Fa
 #save_matlab()    
 #fabian_glasso()
 spams_group_lasso()
+
 #iterative_collective_classification()
 # wordDist()
 # matrix_test()
