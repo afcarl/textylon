@@ -60,7 +60,7 @@ import sys
 from scipy import mean
 
 
-GEOTEXT_HOME = '/home/af/Downloads/Roller Dataset NA'
+
 GEOTEXT_HOME = '/home/arahimi/Roller Dataset NA'
 users_home = path.join(GEOTEXT_HOME, 'processed_data')
 testfile = path.join(users_home, 'user_info.test')
