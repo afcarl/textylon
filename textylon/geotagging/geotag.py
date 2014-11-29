@@ -5,6 +5,7 @@ Created on 4 Sep 2014
 '''
 import codecs
 import matplotlib as mpl
+from scipy.sparse.lil import lil_matrix
 mpl.use('Agg')
 import shutil
 import os
@@ -19,11 +20,13 @@ from math import radians, cos, sin, asin, sqrt
 from sklearn import cross_validation
 from sklearn import metrics
 from  sklearn.datasets import load_files
+import string
+import sets
 from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.preprocessing import normalize
 from sklearn.decomposition import PCA, TruncatedSVD, NMF, SparsePCA
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer, strip_accents_ascii, strip_accents_unicode
 from sklearn.feature_selection import SelectKBest, chi2
 from sklearn.linear_model import PassiveAggressiveClassifier
 from sklearn import linear_model
@@ -87,13 +90,16 @@ import sys
 import time
 import pickle
 import numpy
-
+import nltk
 import theano
 import theano.tensor as T
-DATASET_NUMBER = 2
+time.sleep(1)
+DATASET_NUMBER = 3
 DATA_HOME = '/home/arahimi/datasets'
-DATASETS = ['cmu', 'na', 'world']
-ENCODINGS = ['latin1', 'utf-8', 'utf-8']
+DATASETS = ['cmu', 'na', 'world', 'ptwiki', 'dewiki']
+ENCODINGS = ['latin1', 'utf-8', 'utf-8', 'utf-8', 'utf-8']
+buckets = [300, 600, 600, 75, 75]
+BUCKET_SIZE = buckets[DATASET_NUMBER-1]
 GEOTEXT_HOME = path.join(DATA_HOME, DATASETS[DATASET_NUMBER-1])
 data_encoding = ENCODINGS[DATASET_NUMBER-1]
 # GEOTEXT_HOME = '/home/arahimi/Roller Dataset NA'
@@ -102,7 +108,7 @@ testfile = path.join(users_home, 'user_info.test')
 devfile = path.join(users_home, 'user_info.dev')
 trainfile = path.join(users_home, 'user_info.train')
 
-
+print "dataset: "+ DATASETS[DATASET_NUMBER - 1]
 lngs = []
 ltts = []
 pointText = {}
@@ -119,6 +125,7 @@ classLatMedian = {}
 classLonMedian = {}
 classLatMean = {}
 classLonMean = {}
+trainClasses = {}
 devClasses = {}
 testClasses = {}
 categories = []
@@ -143,8 +150,41 @@ U_dev = None
 U_test = None
 
 
-
+def extract_entity_names(t):
+    entity_names = []
+    
+    if hasattr(t, 'node') and t.node:
+        if t.node == 'NE':
+            entity_names.append(' '.join([child[0] for child in t]))
+        else:
+            for child in t:
+                childentities = extract_entity_names(child)
+                if childentities==None:
+                    childentities = []
+                entity_names.extend(childentities)
+        if entity_names==None:
+            entity_names = []            
+        return entity_names
+def get_named_entities(sample):
+    sentences = nltk.sent_tokenize(sample)
+    tokenized_sentences = [nltk.word_tokenize(sentence) for sentence in sentences]
+    tagged_sentences = [nltk.pos_tag(sentence) for sentence in tokenized_sentences]
+    chunked_sentences = nltk.ne_chunk_sents(tagged_sentences, binary=True)
+    entity_names = []
+    for tree in chunked_sentences:
+        # Print results per sentence
+        # print extract_entity_names(tree)
         
+        treeentities = extract_entity_names(tree)
+        if treeentities is None:
+            treeentities = []
+        entity_names.extend(treeentities)
+     
+    # Print all entity names
+    #print entity_names
+     
+    # Print unique entity names
+    return entity_names      
 def median(mylist):
     sorts = sorted(mylist)
     length = len(sorts)
@@ -170,7 +210,7 @@ def distance(lat1, lon1, lat2, lon2):
     km = 6367 * c
     return km 
 
-def users(file, type='train'):
+def users(file, type='train', write=False):
     global testUsers
     global trainUsers
     global devUsers
@@ -331,6 +371,9 @@ def createTrainDir(granularity, partitionMethod, create_dir=False):
     global classLonMedian
     global testClasses
     global devClasses
+    global trainClasses
+    global categories
+    categories = []
     filename = path.join(GEOTEXT_HOME, 'processed_data/' + str(granularity).strip() + '_' + partitionMethod + '_clustered.train')
     allpoints = []
     allpointsMinLat = []
@@ -378,14 +421,15 @@ def createTrainDir(granularity, partitionMethod, create_dir=False):
         medianlon = median(longs)
         meanlat = mean(lats)
         meanlon = mean(longs)
-        
-        classLatMedian[str(i).strip()] = medianlat
-        classLonMedian[str(i).strip()] = medianlon
-        classLatMean[str(i).strip()] = meanlat
-        classLonMean[str(i).strip()] = meanlon    
+        label = str(i).strip()
+        categories.append(label)
+        classLatMedian[label] = medianlat
+        classLonMedian[label] = medianlon
+        classLatMean[label] = meanlat
+        classLonMean[label] = meanlon    
         
         if create_dir:
-            class_dir = path.join(trainhome, str(i).strip())
+            class_dir = path.join(trainhome, label)
             os.mkdir(class_dir)
         
         for location in cluster:
@@ -401,14 +445,15 @@ def createTrainDir(granularity, partitionMethod, create_dir=False):
             else:
                 # just one single user in this location
                 locusers.append(userstr.strip())
+            for user in locusers:
+                trainClasses[user] = i
             # for each user in this location find the text
             # groupbyusersText should be true for this to work
             # print "writing user texts in their corresponding geographical class in: " + class_dir
             if create_dir:
                 for user in locusers:
-                    if user in trainUsers:
-                        with codecs.open(path.join(class_dir, user), 'w', encoding=data_encoding) as inf:
-                            inf.write(trainText[user])
+                    with codecs.open(path.join(class_dir, user), 'w', encoding=data_encoding) as inf:
+                        inf.write(trainText[user])
     print "train directories created and class median and mean lat,lon computed. trainfile: " + filename
     devDistances = []
     for user in devUsers:
@@ -585,7 +630,7 @@ def dataSpaceModification(Y_train, U_train):
     return Y_train
             
         
-def loss(preds, U_test, loss='median'):
+def loss(preds, U_test, loss='median', save=False):
     if len(preds) != len(U_test): 
         print "The number of test sample predictions is: " + str(len(preds))
         print "The number of test samples is: " + str(len(U_test))
@@ -594,6 +639,7 @@ def loss(preds, U_test, loss='median'):
     sumMeanDistance = 0
     sumMedianDistance = 0
     distances = []
+    user_location = {}
     for i in range(0, len(preds)):
         user = U_test[i]
         location = userLocation[user].split(',')
@@ -602,6 +648,7 @@ def loss(preds, U_test, loss='median'):
         prediction = categories[preds[i]]
         medianlat = classLatMedian[prediction]  
         medianlon = classLonMedian[prediction]  
+        user_location[user] = (medianlat, medianlon)
         meanlat = classLatMean[prediction] 
         meanlon = classLonMean[prediction]
         predictionCoordinate = 'median'
@@ -609,7 +656,10 @@ def loss(preds, U_test, loss='median'):
             distances.append(distance(lat, lon, medianlat, medianlon))
         elif predictionCoordinate == 'mean':
             distances.append(distance(lat, lon, meanlat, meanlon))
-        
+    if save:
+        print "dumping the results in preds.pkl"
+        with open(path.join(GEOTEXT_HOME, 'preds.pkl'), 'wb') as outf:
+            pickle.dump(user_location, outf) 
     averageMeanDistance = sumMeanDistance / float(len(preds))
     averageMedianDistance = sumMedianDistance / float(len(preds))
     medianDistance = median(distances)
@@ -617,6 +667,7 @@ def loss(preds, U_test, loss='median'):
     # print "Average distance from class median is " + str(averageMedianDistance)
     print "Mean distance is " + str(mean(distances))
     print "Median distance is " + str(median(distances))
+    print "Accuracy @ 161 k.m. is " + str(100* len([d for d in distances if d < 161])/ float(len(distances)))
     
     return mean(distances), median(distances)
 
@@ -694,7 +745,7 @@ def feature_extractor(use_mention_dictionary=False, use_idf=True, norm='l2', bin
     trainDir = path.join(GEOTEXT_HOME, 'processed_data/train')
     testDir = path.join(GEOTEXT_HOME, 'processed_data/test')
     devDir = path.join(GEOTEXT_HOME, 'processed_data/dev')
-    
+    print "loading train, dev and test files..."
     data_train = load_files(trainDir, encoding=data_encoding)
     target = data_train.target
     data_test = load_files(testDir, encoding=data_encoding)
@@ -734,16 +785,15 @@ def feature_extractor(use_mention_dictionary=False, use_idf=True, norm='l2', bin
     
     if vectorizer == None:    
         if use_mention_dictionary:
+            print "using @ mention dictionary as vocab..."
             extract_mentions()
             vectorizer = TfidfVectorizer(use_idf=use_idf, norm=norm, binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=max_df, ngram_range=(1, 1), stop_words=None, vocabulary=mentions)
         else:
-            vectorizer = TfidfVectorizer(use_idf=use_idf, norm=norm, binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=max_df, ngram_range=(1, 1), stop_words=None)
-    
+            print "mindf: " + str(min_df) + " maxdf: " + str(max_df)
+            vectorizer = TfidfVectorizer(use_idf=use_idf, norm=norm, binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=max_df, ngram_range=(1, 1), stop_words='english')
     X_train = vectorizer.fit_transform(data_train.data)
-    print type(vectorizer.vocabulary_)
-    keys = vectorizer.vocabulary_.keys()
-    for i in range(0, 10):
-        print keys[i], vectorizer.vocabulary_[keys[i]]
+    #keys = vectorizer.vocabulary_.keys()
+
         
     '''
     #test the sum of a doc feature values
@@ -787,7 +837,7 @@ def feature_extractor(use_mention_dictionary=False, use_idf=True, norm='l2', bin
             
     chi = False
     if chi:
-        k = 20000
+        k = 200000
         print("Extracting %d best features by a chi-squared test" % k)
         t0 = time.time()
         ch2 = SelectKBest(chi2, k=k)
@@ -796,8 +846,9 @@ def feature_extractor(use_mention_dictionary=False, use_idf=True, norm='l2', bin
         X_dev = ch2.transform(X_dev)
         print("done in %fs" % (time.time() - t0))
         print()
-        # feature_names = np.asarray(vectorizer.get_feature_names())
-    feature_names = np.asarray(vectorizer.get_feature_names())
+        feature_names = np.asarray(vectorizer.get_feature_names())
+    else:
+        feature_names = np.asarray(vectorizer.get_feature_names())
 
     DO_SVD = False
     Reduction_D = 1000
@@ -847,7 +898,160 @@ def feature_extractor(use_mention_dictionary=False, use_idf=True, norm='l2', bin
                 testCostMatrix[i, j] = distance(lat, lon, lat2, lon2)  
             
     return X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names
+
+def feature_extractor2(use_mention_dictionary=False, use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=1, max_df=1.0, BuildCostMatrices=False, vectorizer=None):
+    '''
+    read train, dev and test directories and extract textual features using tfidfvectorizer.
+    '''
+    global X_train
+    global X_dev
+    global X_test
+    global Y_train
+    global Y_dev
+    global Y_test
+    global U_train
+    global U_dev
+    global U_test
     
+    global costMatrix
+    global trainCostMatrix
+    global testCostMatrix
+    global devCostMatrix
+    
+
+    
+    
+    U_train = [u for u in sorted(trainUsers)]
+    U_test = [u for u in sorted(testUsers)]
+    U_dev = [u for u in sorted(devUsers)]
+
+    
+
+    print("%d categories" % len(categories))
+    print()
+    
+    # split a training set and a test set
+    Y_train = np.asarray([trainClasses[u] for u in U_train])
+    Y_test = np.asarray([testClasses[u] for u in U_test])
+    Y_dev = np.asarray([devClasses[u] for u in U_dev])
+    
+   
+    print("Extracting features from the training dataset using a sparse vectorizer")
+    t0 = time.time()
+    
+    if vectorizer == None:    
+        if use_mention_dictionary:
+            print "using @ mention dictionary as vocab..."
+            extract_mentions()
+            vectorizer = TfidfVectorizer(use_idf=use_idf, norm=norm, binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=max_df, ngram_range=(1, 1), stop_words=None, vocabulary=mentions)
+        else:
+            print "mindf: " + str(min_df) + " maxdf: " + str(max_df)
+            vectorizer = TfidfVectorizer(use_idf=use_idf, norm=norm, binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=max_df, ngram_range=(1, 1), stop_words='english')
+
+    X_train = vectorizer.fit_transform([trainText[u] for u in U_train])
+    #keys = vectorizer.vocabulary_.keys()
+
+            
+    '''
+    #test the sum of a doc feature values
+    test = X_train[0].todense()
+    print test.shape
+    nn = test.shape[0]
+    vv = test.shape[1]
+    print nn
+    print vv
+    summm = 0
+    for l in range(0, vv):
+         summm += test[0, l]
+    print summm
+    '''
+    duration = time.time() - t0
+    print("n_samples: %d, n_features: %d" % X_train.shape)
+    print()
+    
+    print("Extracting features from the dev dataset using the same vectorizer")
+    t0 = time.time()
+    X_dev = vectorizer.transform([devText[u] for u in U_dev])
+    duration = time.time() - t0
+    print("n_samples: %d, n_features: %d" % X_dev.shape)
+    print()
+
+    print("Extracting features from the test dataset using the same vectorizer")
+    t0 = time.time()
+    X_test = vectorizer.transform([testText[u] for u in U_test])
+    duration = time.time() - t0
+    print("n_samples: %d, n_features: %d" % X_test.shape)
+    print()
+    ppmitransform = False
+    if ppmitransform:
+        ppmiTransform(X_train)
+        ppmiTransform(X_dev)
+        ppmiTransform(X_test)
+    
+            
+    chi = False
+    if chi:
+        k = 200000
+        print("Extracting %d best features by a chi-squared test" % k)
+        t0 = time.time()
+        ch2 = SelectKBest(chi2, k=k)
+        X_train = ch2.fit_transform(X_train, Y_train)
+        X_test = ch2.transform(X_test)
+        X_dev = ch2.transform(X_dev)
+        print("done in %fs" % (time.time() - t0))
+        print()
+        feature_names = np.asarray(vectorizer.get_feature_names())
+    else:
+        feature_names = np.asarray(vectorizer.get_feature_names())
+
+    DO_SVD = False
+    Reduction_D = 1000
+    if DO_SVD:
+        print("dimension reduction svd with d=%d" % Reduction_D)
+        svd = TruncatedSVD(n_components=Reduction_D, algorithm="randomized", n_iterations=5, random_state=None, tol=0)
+        X_train = svd.fit_transform(X_train)
+        X_test = svd.transform(X_test)
+        X_dev = svd.transform(X_dev)
+        print("dimension reduction finished.")
+        
+    if BuildCostMatrices:
+        print "building cost matrix..."
+        costMatrix = np.ndarray(shape=(len(classLatMedian), len(classLatMedian)), dtype=float)
+        for i in range(0, len(categories)):
+            lat = classLatMedian[str(i)]
+            lon = classLonMedian[str(categories[i])]
+            for j in classLatMedian:
+                lat2 = classLatMedian[j]
+                lon2 = classLonMedian[j]
+                cost = distance(lat, lon, lat2, lon2)
+                costMatrix[i, j] = cost
+        
+        print "building sample based cost matrix..."
+        trainCostMatrix = np.ndarray(shape=(X_train.shape[0], len(categories)), dtype=float)
+        for i in range(0, trainCostMatrix.shape[0]):
+            lat, lon = locationStr2Float(trainUsers[U_train[i]])
+            for j in range(0, trainCostMatrix.shape[1]):
+                lat2 = classLatMedian[str(j)]
+                lon2 = classLonMedian[str(j)]
+                trainCostMatrix[i, j] = distance(lat, lon, lat2, lon2)
+        
+        devCostMatrix = np.ndarray(shape=(X_dev.shape[0], len(categories)), dtype=float)
+        for i in range(0, devCostMatrix.shape[0]):
+            lat, lon = locationStr2Float(devUsers[U_dev[i]])
+            for j in range(0, devCostMatrix.shape[1]):
+                lat2 = classLatMedian[str(j)]
+                lon2 = classLonMedian[str(j)]
+                devCostMatrix[i, j] = distance(lat, lon, lat2, lon2)        
+        
+        testCostMatrix = np.ndarray(shape=(X_test.shape[0], len(categories)), dtype=float)
+        for i in range(0, testCostMatrix.shape[0]):
+            lat, lon = locationStr2Float(testUsers[U_test[i]])
+            for j in range(0, testCostMatrix.shape[1]):
+                lat2 = classLatMedian[str(j)]
+                lon2 = classLonMedian[str(j)]
+                testCostMatrix[i, j] = distance(lat, lon, lat2, lon2)  
+            
+    return X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names
 def abod(probs, preds, U_test):
     # print "running abod to find the Approximate Bayes-Optimal Decision..."
     n_samples = probs.shape[0]
@@ -873,7 +1077,7 @@ def abod(probs, preds, U_test):
     return loss(preds2, U_test)
     
     
-def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity=10, DSExpansion=False, DSModification=False, compute_dev=True, report_verbose=False, clf=None):
+def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity=10, DSExpansion=False, DSModification=False, compute_dev=False, report_verbose=False, clf=None):
     
     if DSExpansion:
         X_train, Y_train = dataSpaceExpansion(X_train, Y_train)
@@ -881,9 +1085,17 @@ def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_t
     if DSModification:
         Y_train = dataSpaceModification(Y_train, U_train)
     if clf==None:
-        # clf = LinearSVC(multi_class='ovr', class_weight='auto', C=1.0, loss='l2', penalty='l1', dual=False, tol=1e-3)
+        #clf = LinearSVC(multi_class='ovr', class_weight='auto', C=1.0, loss='l2', penalty='l2', dual=False, tol=1e-3)
         #clf = linear_model.LogisticRegression(C=1.0, penalty='l2')
-        clf = SGDClassifier(loss='log', alpha=0.000001, penalty='l1', learning_rate='optimal', n_iter=5, shuffle=False, n_jobs=20)
+        alpha = 0.0000001
+        if DATASET_NUMBER == 1:
+            alpha = 0.00005
+        elif DATASET_NUMBER == 2:
+            alpha = 0.0000001
+        elif DATASET_NUMBER == 3:
+            alpha = 0.0000001
+        #alpha = 0.000001
+        clf = SGDClassifier(loss='log', alpha=alpha, penalty='l1', learning_rate='optimal', n_iter=5, shuffle=False, n_jobs=15)
         # clf = MultiTaskLasso()
         # clf = ElasticNet()
         # clf = linear_model.Lasso(alpha = 0.1)
@@ -896,7 +1108,7 @@ def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_t
         # clf = Perceptron(n_iter=50)
         # clf = PassiveAggressiveClassifier(n_iter=50)
         # clf = KNeighborsClassifier(n_neighbors=10)
-        # clf = NearestCentroid()
+        #clf = NearestCentroid()
         #clf = MultinomialNB(alpha=.01)
     print('_' * 80)
     print("Training: ")
@@ -912,12 +1124,9 @@ def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_t
     
     if compute_dev:
         devPreds = clf.predict(X_dev)
-        # score1 = None
-        # Score2 = None
-        score1 = metrics.f1_score(Y_dev, devPreds)
-        score2 = metrics.accuracy_score(Y_dev, devPreds)
-        
         if report_verbose:
+            score1 = metrics.f1_score(Y_dev, devPreds)
+            score2 = metrics.accuracy_score(Y_dev, devPreds)
             print '**********dev************'
             print("classification report:")
             print(metrics.classification_report(Y_dev, devPreds, target_names=categories))
@@ -932,11 +1141,10 @@ def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_t
                 for i, category in enumerate(categories):
                     top10 = np.argsort(clf.coef_[i])[-10:]
                     print("%s: %s" % (category, " ".join(feature_names[top10])))
+
     
-        # loss(devPreds, U_dev)
     
-    
-        
+    print "predicting test labels"  
     t0 = time.time()
     preds = clf.predict(X_test)
     # scores = clf.decision_function(X_test)
@@ -944,12 +1152,14 @@ def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_t
     probs = None
     # print preds.shape
     test_time = time.time() - t0
+    print("test time: %0.3fs" % test_time)
     
     
     
-    score1 = metrics.f1_score(Y_test, preds)
-    score2 = metrics.accuracy_score(Y_test, preds)
+
     if report_verbose:
+        score1 = metrics.f1_score(Y_test, preds)
+        score2 = metrics.accuracy_score(Y_test, preds)
         print "************test*************"
         print("test time:  %0.3fs" % test_time)
         print("classification report:")
@@ -965,8 +1175,9 @@ def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_t
             for i, category in enumerate(categories):
                 top10 = np.argsort(clf.coef_[i])[-10:]
                 print("%s: %s" % (category, " ".join(feature_names[top10])))
+    
     print "test results"
-    meanTest, medianTest = loss(preds, U_test)
+    meanTest, medianTest = loss(preds, U_test, save=True)
     meanDev = -1
     medianDev = -1
     if compute_dev:
@@ -975,7 +1186,7 @@ def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_t
     # loss(preds)
     # evaluate(preds,U_test, categories, None)
     # abod(probs, preds, U_test)
-
+    Tracer()()
     return preds, probs, U_test, meanTest, medianTest, meanDev, medianDev
    
 # classify()
@@ -1168,7 +1379,6 @@ def wirelessSGD(max_iters=100, kernel=None, optimize=True, plot=True):
     return m
 
 def initialize(partitionMethod, granularity, write=False):    
-    global records
     global lngs
     global ltts
     global keys
@@ -1189,12 +1399,10 @@ def initialize(partitionMethod, granularity, write=False):
     global categories
 
 
-    records = []
     lngs = []
     ltts = []
     pointText = {}
     keys = []
-    userFirstTime = {}
     userLocation = {}
     locationUser = {}
     userlat = {}
@@ -1213,9 +1421,9 @@ def initialize(partitionMethod, granularity, write=False):
 
     #readGeoTextRecords(encoding=data_encoding)
     print 'reading (user_info.) train, dev and test file and building trainUsers, devUsers and testUsers with their locations'
-    users(trainfile, 'train')
-    users(devfile, 'dev')
-    users(testfile, 'test')
+    users(trainfile, 'train', write)
+    users(devfile, 'dev', write)
+    users(testfile, 'test', write)
     print "the number of train" + " users is " + str(len(trainUsers))
     print "the number of test" + " users is " + str(len(testUsers))
     print "the number of dev" + " users is " + str(len(devUsers))
@@ -1223,7 +1431,8 @@ def initialize(partitionMethod, granularity, write=False):
     #fillUserByLocation()
     #fillTextByUser(encoding=data_encoding)
     create_directories(granularity, partitionMethod, write)        
-
+    print "initialization finished"
+    
 def classificationBench(granularity, partitionMethod, use_mention_dictionary=False):
     medians = {}
     max_dfs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50]
@@ -1270,9 +1479,9 @@ def classificationBench(granularity, partitionMethod, use_mention_dictionary=Fal
     '''
 def asclassification(granularity, partitionMethod, use_mention_dictionary=False):
 
-    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(use_mention_dictionary=use_mention_dictionary, max_df=1.0, min_df=1)    
+    #partitionLocView(granularity=granularity, partitionMethod=partitionMethod)
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor2(use_mention_dictionary=use_mention_dictionary, min_df=10, max_df=0.2)    
     preds, probs, U_test, meanTest, medianTest, meanDev, medianDev = classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity)
-    partitionLocView(granularity=granularity, partitionMethod=partitionMethod)
     return preds, probs, U_test, meanTest, medianTest, meanDev, medianDev
 
 
@@ -2914,18 +3123,37 @@ def euclidean():
 def extract_mentions(k=0):
     print "extracting mention information from text"
     global mentions
+    #if it is there load it and return
+    mention_file_address = path.join(GEOTEXT_HOME, 'mentions.pkl')
+    if os.path.exists(mention_file_address):
+        print "reading mentions from pickle"
+        with open(mention_file_address, 'rb') as inf:
+            mentions = pickle.load(inf)
+            return
     text = ''
     #for user in trainUsers:
     #    text += userText[user].lower()
+    print "joining texts"
     text = ' '.join(trainText.values())
-    text = text.lower()
-    token_pattern = r"(?u)\b\w\w+\b"
-    #token_pattern = "[\@\#]+\w\w+\b"
+    #text = text.lower()
+    '''
+    if data_encoding in ['utf-8']:
+        text = strip_accents_unicode(text)
+    elif data_encoding in ['latin', 'latin1']:
+        text = strip_accents_ascii(text)
+    '''
+    token_pattern = '(?<=^|(?<=[^a-zA-Z0-9-_\\.]))@([A-Za-z]+[A-Za-z0-9_]+)'
     token_pattern = re.compile(token_pattern)
-    mentionsList = [word for word in token_pattern.findall(text) if word.startswith('user_')]
-    #mentionsList = [word for word in token_pattern.findall(text)]
+    print "finding mentions"
+    mentionsList = [word.lower() for word in token_pattern.findall(text)]
+    print "building the counter"
     mentionsDic = Counter(mentionsList)
+    print "frequency thresholding"
     mentions = [word for word in mentionsDic if mentionsDic[word] > k]
+    with open(mention_file_address, 'wb') as outf:
+        print "writng mentions to pickle"
+        pickle.dump(mentions, outf)
+    
 def spams_groups(feature_names, X_train,type, k=0):
     if type=="mentions":
         print "building feature group memberships"
@@ -2962,40 +3190,62 @@ def spams_groups(feature_names, X_train,type, k=0):
         
         
     
-def iterative_collective_classification(granularity=300, partitionMethod='median'):
+def iterative_collective_classification(granularity=600, partitionMethod='median'):
     global feature_names
 
-    # extract content features
-    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor( use_mention_dictionary=True)
+     # extract content features
+    print "content features"
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor( use_mention_dictionary=False, min_df=1)
 
-    # classify
-    preds, probs, U_test, meanTest, medianTest, meanDev, medianDev = classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity, compute_dev=False, report_verbose=False)
-    loss(preds, U_test)
-    # build network based on mentions (a pairwise similarity measure)
-    vectorizer = CountVectorizer(encoding=data_encoding, vocabulary=mentions, binary=True)
-    X_train_relational, Y_train, U_train, X_dev_relational, Y_dev, U_dev, X_test_relational, Y_test, U_test, categories, feature_names_relational = feature_extractor(use_mention_dictionary=True, use_idf=False, norm=None, binary=True, sublinear_tf=False, min_df=1, BuildCostMatrices=False, vectorizer=vectorizer)
     # vstack train and dev/test data
     X_content = sparse.vstack([X_train, X_test]).tocsr()
+    print "deleting some references"
+    del X_train
+    del X_dev
+    del X_test   
+    # classify
+    #preds, probs, U_test, meanTest, medianTest, meanDev, medianDev = classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity, compute_dev=False, report_verbose=False)
+    #print "content only results"
+    #loss(preds, U_test)
+    # build network based on mentions (a pairwise similarity measure)
+    extract_mentions(k=0)
+    vectorizer = CountVectorizer(encoding=data_encoding, vocabulary=mentions, binary=True)
+    X_train_relational, Y_train, U_train, X_dev_relational, Y_dev, U_dev, X_test_relational, Y_test, U_test, categories, feature_names_relational = feature_extractor(use_mention_dictionary=True, use_idf=False, norm=None, binary=True, sublinear_tf=False, min_df=1, BuildCostMatrices=False, vectorizer=vectorizer)
+    preds_rel, probs_rel, U_test_rel, meanTest, medianTest, meanDev, medianDev = classify(X_train_relational, Y_train, U_train, X_dev_relational, Y_dev, U_dev, X_test_relational, Y_test, U_test, categories, feature_names, granularity, compute_dev=False, report_verbose=False)
+    print "network only results"
+    loss(preds_rel, U_test)
+    
+
+    
     X_relational = sparse.vstack([X_train_relational, X_test_relational]).tocsr()
+    del X_train_relational
+    del X_test_relational
     Xt_relational = np.transpose(X_relational)
+    X_relational_shape0 = X_relational.shape[0]
     # find the number of shared mentions for all pairs of users/samples 
+    print "computing the pairs matrix"
     pairs = X_relational.dot(Xt_relational)
+    
+    print "deleting relational references"
+    del X_relational
+    del Xt_relational
     # set the diagonal to zero (the number of shared mentions of a user with herself)
     #equal1_indices = pairs < 2
     #pairs[equal1_indices] = 0
     #pairs = threshold(pairs, 2, 100, 0)
     pairs.setdiag(0)
+    print "adding collective features to the design matrix"
     content_relational_features = feature_names.tolist()
     for i in range(0, len(categories)):
         content_relational_features.append('new_relational_aggregated_feature' + str(i))
     feature_names = np.asarray(content_relational_features)
-    n_iter = 1000
+    n_iter = 10
     for i in range(0, n_iter):
         print "iteration " + str(i)
         Y_train_reshaped = Y_train.reshape(Y_train.shape[0], 1)
         Y_test_reshaped = Y_test.reshape(Y_test.shape[0], 1)
         Y = csr_matrix(sparse.vstack([Y_train_reshaped, Y_test_reshaped])).todense()
-        XClass = csr_matrix((X_relational.shape[0], len(categories)), dtype=int)
+        XClass = csr_matrix((X_relational_shape0, len(categories)), dtype=int)
         # XClass matrix n_samples x n_classes where XClass[i, j] = 1 if sample i belongs to class j otherwise zero 
         XClass[np.arange(XClass.shape[0]), np.transpose(Y[np.arange(XClass.shape[0]), 0])] = 1
         # csr matrix n_samples x n_classes where n[i, j]= sum(friendshipStrength) for neighbors of i in class j  
@@ -3009,8 +3259,7 @@ def iterative_collective_classification(granularity=300, partitionMethod='median
         X_test_relational_aggregated = neighborhoodClassDistribution[len(U_train):, :]
         preds, probs, U_test, meanTest, medianTest, meanDev, medianDev = classify(X_train_content_relation, Y_train, U_train, X_dev, Y_dev, U_dev, X_test_content_relation, Y_test, U_test, categories, feature_names, granularity, compute_dev=False, report_verbose=False)
         loss(preds, U_test)
-        Y_test = np.array(preds)
-    Tracer()()
+        #Y_test = np.array(preds)
     # build the network using pariwise euclidean distance
     
     # iterate until convergance
@@ -3044,8 +3293,9 @@ def spams_group_lasso():
     import numpy as np
     import scipy.sparse as ssp
     myfloat=float
-    
-    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(use_mention_dictionary=False, min_df=1, max_df=1.0, norm=None)
+    print "first solve the dense/sparse issue"
+    sys.exit()
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(use_mention_dictionary=False, min_df=2, max_df=1.0, norm=None)
     extract_mentions()
     #graph = spams_groups(feature_names,X_train,type="mentions", k=0)
     graph = spams_groups(feature_names,X_train,type="count", k=0)
@@ -3136,16 +3386,496 @@ def save_matlab():
     mmwrite(path.join(GEOTEXT_HOME, 'Y_train.mtx'), Y_train)
     mmwrite(path.join(GEOTEXT_HOME, 'X_test.mtx'), X_test.todense())
     mmwrite(path.join(GEOTEXT_HOME, 'Y_test.mtx'), Y_test)
+
+def data_id(i, j):
+    if i > j:
+        return str(j) + '\t' + str(i)
+    else:
+        return str(i) + '\t' + str(j)
+def prepare_adsorption_data():
+    option=2
+    print "option: " + str(option)
+    if option==1:
+        extract_mentions(k=0)
+        vectorizer = CountVectorizer(encoding=data_encoding, vocabulary=mentions, binary=True)
+        X_train_relational, Y_train, U_train, X_dev_relational, Y_dev, U_dev, X_test_relational, Y_test, U_test, categories, feature_names_relational = feature_extractor(use_mention_dictionary=True, use_idf=False, norm=None, binary=True, sublinear_tf=False, min_df=1, BuildCostMatrices=False, vectorizer=vectorizer)
+        print "union of test and train nodes"
+        X_relational = sparse.vstack([X_train_relational, X_test_relational]).tocsr()
+        print "transposing the relation matrix"
+        X_relational_T = np.transpose(X_relational)
+        # find the number of shared mentions for all pairs of users/samples 
+        print "computing node friendship"
+        pairs = X_relational.dot(X_relational_T)
+        # set the diagonal to zero (the number of shared mentions of a user with herself)
+        #equal1_indices = pairs < 2
+        #pairs[equal1_indices] = 0
+        #pairs = threshold(pairs, 2, 100, 0)
+        pairs.setdiag(0)
+        xindx, yindx = pairs.nonzero()
+        xindx = xindx.tolist()
+        yindx = yindx.tolist()
+        print "writing id_user file"
+        with codecs.open(path.join(GEOTEXT_HOME, 'id_user.pair'), 'w', 'utf-8') as outf:
+            i = 0
+            for u in U_train + U_test:
+                outf.write(str(i) + '\t' + u + '\n')
+                i += 1
+                
+        print "number of nonzeros is " + str(pairs.nnz)
+        tenpercent = pairs.nnz / 10
+        with codecs.open(path.join(GEOTEXT_HOME, 'input_graph.pair'), 'w', 'ascii') as outf:
+            i = 0
+            for x, y in zip(xindx, yindx):
+                    if i % tenpercent == 0:
+                        print "processing " + str(10 + (10* i/tenpercent)) + "%"
+                    i += 1
+                    if y>x:
+                        outf.write(str(x)+ '\t' + str(y) + '\t' + str(pairs[x, y]) + '\n')
+        with codecs.open(path.join(GEOTEXT_HOME, 'seeds.pair'), 'w', 'ascii') as outf:
+            for i in range(0, Y_train.shape[0]):
+                outf.write(str(i) + '\t'+ str(Y_train[i]) + '\t' + '1.0' + '\n')
+        with codecs.open(path.join(GEOTEXT_HOME, 'gold_labels_test.pair'), 'w', 'ascii') as outf:
+            for i in range(0, Y_test.shape[0]):
+                outf.write(str(i + X_train_relational.shape[0]) + '\t'+ str(Y_test[i]) + '\t' + '1.0' + '\n')
+
+    elif option==2:
+        extract_mentions(k=0)
+        sortedNodes = sorted(mentions)
+        vocab_cnt = len(sortedNodes)
+        idx = range(vocab_cnt)
+        vocab = dict(zip(sortedNodes, idx))
+        vectorizer = CountVectorizer(encoding=data_encoding, vocabulary=vocab, binary=False)
+        X_train_relational, Y_train, U_train, X_dev_relational, Y_dev, U_dev, X_test_relational, Y_test, U_test, categories, feature_names_relational = feature_extractor(use_mention_dictionary=True, use_idf=False, norm=None, binary=True, sublinear_tf=False, min_df=1, BuildCostMatrices=False, vectorizer=vectorizer)
+        X_relational = sparse.vstack([X_train_relational, X_test_relational])
+        U_all = U_train + U_test                
+        U = [u.lower() for u in U_all]
+        userDic = dict(zip(U, range(0, len(U))))
+        print "writing id_user file"
+        with codecs.open(path.join(GEOTEXT_HOME, 'id_user'), 'w', 'utf-8') as outf:
+            for u in U:
+                outf.write(str(userDic[u]) + '\t' + u + '\n')
+
+        assert (len(U)==X_relational.shape[0]), 'number of users is not eq to the number of samples'
+        assert (vocab_cnt==X_relational.shape[1]), 'the number of features is not equal to the number of mentions'
+        already_added = []
+        print "writing seed file"
+        with codecs.open(path.join(GEOTEXT_HOME, 'seeds'), 'w', 'ascii') as outf:
+            for i in range(0, Y_train.shape[0]):
+                outf.write(str(i) + '\t'+ str(Y_train[i]) + '\t' + '1.0' + '\n')
+        print "writing gold_labels"
+        with codecs.open(path.join(GEOTEXT_HOME, 'gold_labels'), 'w', 'ascii') as outf:
+            for i in range(0, Y_test.shape[0]):
+                outf.write(str(i + Y_train.shape[0]) + '\t'+ str(Y_test[i]) + '\t' + '1.0' + '\n')
+        X_relational = X_relational.tolil()
+        print "writing input_graph"
+        print "number of nonzero cells is " + str(X_relational.nnz)
+        tenpercent = X_relational.nnz / 10
+        xindx, yindx = X_relational.nonzero()
+        xindx = xindx.tolist()
+        yindx = yindx.tolist()
+        with codecs.open(path.join(GEOTEXT_HOME, 'input_graph'), 'w', 'ascii') as outf:
+            i = 1
+            for x, y in zip(xindx, yindx):
+                if i % tenpercent == 0:
+                    print "processing " + str(10 + (10* i/tenpercent)) + "%"
+                i += 1
+                d_id = data_id(x, y)
+                mention = sortedNodes[y]
+                u = U[x]
+                w = X_relational[x, y]
+                X_relational[x, y] = 0
+                if mention in U and u in sortedNodes:
+                    w_r = X_relational[userDic[mention], vocab[u]]
+                    w += w_r
+                    if w_r>0:
+                        X_relational[userDic[mention], vocab[u]] = 0   
+                if w > 0:
+                    outf.write(d_id + '\t' + str(w) + '\n')        
+
+def direct_graph():
+    '''
+    results cmu 
+    not weighted:
+    mean distance is 668.581279917
+    median distance is 277.116433909
+    weighted
+    mean distance is 676.225954801
+    median distance is 255.724939021
+    
+    '''
+    graph_file_address = path.join(GEOTEXT_HOME, 'direct_graph')
+    if os.path.exists(graph_file_address):
+        print "reading netgraph from pickle"
+        with open(graph_file_address, 'rb') as inf:
+            netgraph, trainUsers, testUsers = pickle.load(inf)
+    else:
+        print "building the direct graph"
+        token_pattern = '(?<=^|(?<=[^a-zA-Z0-9-_\\.]))@([A-Za-z]+[A-Za-z0-9_]+)'
+        token_pattern = re.compile(token_pattern)
+        netgraph = {}
+        l = len(trainText)
+        tenpercent = l / 10
+        i = 1
+        for user, text in trainText.iteritems():
+            user = user.lower()
+            if i % tenpercent == 0:
+                print str(10* i/tenpercent) + "%"
+            i += 1
+                
+            mentions = [u.lower() for u in token_pattern.findall(text)]
+            mentionDic = Counter(mentions)
+            for mention in mentionDic:
+                if mention > user:
+                    k = user + '\t' + mention
+                    netgraph[k] = netgraph.get(k, 0) + mentionDic[mention]
+                else:
+                    k = mention + '\t' + user
+                    netgraph[k] = netgraph.get(k, 0) + mentionDic[mention]
+        print "adding the test graph"
+        for user, text in testText.iteritems():
+            mentions = [u.lower() for u in token_pattern.findall(text)]
+            mentionDic = Counter(mentions)
+            for mention in mentionDic:
+                if mention > user:
+                    k = user + '\t' + mention
+                    netgraph[k] = netgraph.get(k, 0) + mentionDic[mention]
+                else:
+                    k = mention + '\t' + user
+                    netgraph[k] = netgraph.get(k, 0) + mentionDic[mention]
+        
+        print "pickling the graph with edge size " + str(len(netgraph))
+        with open(path.join(GEOTEXT_HOME, 'direct_graph'), 'wb') as outf:
+            pickle.dump((netgraph, trainUsers, testUsers), outf)    
+    
+    trainUsersLower = {}
+    testUsersLower = {}
+    trainLats = []
+    trainLons = []
+    node_location = {}
+    
+    for user, loc in trainUsers.iteritems():
+        user = user.lower()
+        lat, lon = locationStr2Float(loc)
+        trainLats.append(lat)
+        trainLons.append(lon)
+        trainUsersLower[user] = (lat, lon)
+        node_location[user] = (lat, lon)
+        
+    for user, loc in testUsers.iteritems():
+        user = user.lower()
+        lat, lon = locationStr2Float(loc)
+        testUsersLower[user] = (lat, lon)
+
+    medianLat = median(trainLats)
+    medianLon = median(trainLons)
+    
+    from pygraph.classes.graph import graph
+    gr = graph()
+    print "adding nodes"
+    nodes = []
+    tenpercent = len(netgraph) / 10
+    i = 1
+    for edg in netgraph:
+        if i % tenpercent == 0:
+            print str(10* i/tenpercent) + "%"
+        i += 1            
+        n1n2 = edg.split('\t')
+        n1 = n1n2[0]
+        n2 = n1n2[1]
+        nodes.append(n1)
+        nodes.append(n2)
+    
+    nodes = sets.Set(nodes)
+    nodes_known = trainUsersLower.keys()
+    nodes_unknown = [node for node in nodes if node not in nodes_known]
+    gr.add_nodes(nodes)    
+    print "adding edges"
+    tenpercent = len(netgraph) / 10
+    i = 1
+    for edg in netgraph:
+        if i % tenpercent == 0:
+            print str(10* i/tenpercent) + "%"
+        i += 1            
+        n1n2 = edg.split('\t')
+        n1 = n1n2[0]
+        n2 = n1n2[1]
+        edge = (n1, n2)
+        gr.add_edge(edge, netgraph[edg], label='', attrs=[])
+
+    converged = False
+    weighted = True
+    print "weighted " + str(weighted)
+    max_iter = 30
+    iter_num = 1
+    print "iterating with max_iter = " + str(max_iter)
+    while not converged:
+        print "iter: " + str(iter_num)
+        located_nodes_count = len(node_location)
+        print str(located_nodes_count) + " nodes have location"
+        for node in nodes_unknown:
+            nbrs = gr.neighbors(node)
+            nbrlats = []
+            nbrlons = []
+            for nbr in nbrs:
+                if nbr in node_location:
+                    lat, lon = node_location[nbr]
+                    w = 1
+                    if weighted:
+                        w = gr.get_edge_properties((nbr, node))['weight']
+                    for i in range(0, w):
+                        nbrlats.append(lat)
+                        nbrlons.append(lon)
+            if len(nbrlons) > 0:
+                node_location[node] = (median(nbrlats), median(nbrlons))
+        iter_num += 1
+        if iter_num == max_iter:
+            converged = True
+        if len(node_location) == located_nodes_count:
+            print "converged. No new nodes added in this iteration."
+            #converged = True
+        distances = []
+        for user, loc in testUsersLower.iteritems():
+            lat, lon = loc
+            predicted_lat, predicted_lon = node_location.get(user, (medianLat, medianLon))
+            dist = distance(lat, lon, predicted_lat, predicted_lon)
+            distances.append(dist)
+        
+        print "mean distance is " + str(mean(distances))
+        print "median distance is " + str(median(distances))
+    print "pickling (testUsersLower, node_location)"
+    with open(path.join(GEOTEXT_HOME, 'node_location.pkl'), 'wb') as outf:
+        pickle.dump((testUsersLower, node_location), outf)
+def save_graph(gr):
+    i = 0
+    tenpercent = len(gr) / 10
+    nodes = sets.Set()
+    node_numbers = {}
+    for edg, weight in gr.iteritems():
+        if i % tenpercent == 0:
+            print str(10* i/tenpercent) + "%"
+        i += 1          
+        n1n2 = edg.split('\t')
+        n1 = n1n2[0]
+        n2 = n1n2[1]
+        nodes.add(n1)
+        nodes.add(n2)
+    i = 0
+    for node in nodes:
+        node_numbers[node] = str(i).strip()
+        i += 1
+    
+    i = 0
+    print "writing edges. the number of edges is " + str(len(gr))
+    with codecs.open(path.join(GEOTEXT_HOME, 'edges.txt'), 'w', 'ascii') as outf:
+        for edg, weight in gr.iteritems():
+            if i % tenpercent == 0:
+                print str(10* i/tenpercent) + "%"
+            i += 1          
+            n1n2 = edg.split('\t')
+            n1 = node_numbers[n1n2[0]]
+            n2 = node_numbers[n1n2[1]]
+            w = 1
+            weighted = True
+            if weighted:
+                w = weight
+            outf.write(n1 + '\t' + n2 + '\t' + str(w) + '\n')
+    print "writing nodes. the number of nodes is " + str(len(nodes))
+    with codecs.open(path.join(GEOTEXT_HOME, 'nodes.txt'), 'w', 'ascii') as outf:
+        for node in nodes:
+            outf.write(node_numbers[node] + '\n')
+             
+def direct_graph2():
+    global trainUsers
+    global testUsers
+    global trainText
+    global testText
+    save_gr = False
+
+    '''
+    results cmu 
+    not weighted:
+    mean distance is 668.581279917
+    median distance is 277.116433909
+    weighted
+    mean distance is 676.225954801
+    median distance is 255.724939021
+    
+    NA
+    mean distance is 748.483205478
+    median distance is 449.083574218
+    
+    '''
+    weighted = True
+    graph_file_address = path.join(GEOTEXT_HOME, 'direct_graph')
+    if os.path.exists(graph_file_address):
+        print "reading netgraph from pickle"
+        with open(graph_file_address, 'rb') as inf:
+            netgraph, trainUsers, testUsers = pickle.load(inf)
+            if save_gr:
+                print "saving the graph"
+                save_graph(netgraph)
+    else:
+        print "building the direct graph"
+        token_pattern1 = '(?<=^|(?<=[^a-zA-Z0-9-_\\.]))@([A-Za-z]+[A-Za-z0-9_]+)'
+        token_pattern1 = re.compile(token_pattern1)
+        token_pattern2 = '(?<=^|(?<=[^a-zA-Z0-9-_\\.]))#([A-Za-z]+[A-Za-z0-9_]+)'
+        token_pattern2 = re.compile(token_pattern2)
+        netgraph = {}
+        l = len(trainText)
+        tenpercent = l / 10
+        i = 1
+        for user, text in trainText.iteritems():
+            user = user.lower()
+            if i % tenpercent == 0:
+                print str(10* i/tenpercent) + "%"
+            i += 1  
+            mentions = [u.lower() for u in token_pattern1.findall(text)] 
+            mentionDic = Counter(mentions)
+            for mention in mentionDic:
+                if mention > user:
+                    k = user + '\t' + mention
+                    netgraph[k] = netgraph.get(k, 0) + mentionDic[mention]
+                else:
+                    k = mention + '\t' + user
+                    netgraph[k] = netgraph.get(k, 0) + mentionDic[mention]
+            
+        print "adding the test graph"
+        for user, text in testText.iteritems():
+            mentions = [u.lower() for u in token_pattern1.findall(text)]
+            mentionDic = Counter(mentions)
+            for mention in mentionDic:
+                if mention > user:
+                    k = user + '\t' + mention
+                    netgraph[k] = netgraph.get(k, 0) + mentionDic[mention]
+                else:
+                    k = mention + '\t' + user
+                    netgraph[k] = netgraph.get(k, 0) + mentionDic[mention]
+        
+        print "pickling the graph with edge size " + str(len(netgraph))
+        with open(path.join(GEOTEXT_HOME, 'direct_graph'), 'wb') as outf:
+            pickle.dump((netgraph, trainUsers, testUsers), outf)    
+    
+    trainUsersLower = {}
+    testUsersLower = {}
+    trainLats = []
+    trainLons = []
+    node_location = {}
+    
+    PRIOR = True
+    if PRIOR:
+        print "reading prior text-based locations"
+        prior_file_path = path.join(GEOTEXT_HOME, 'preds.pkl')
+        if os.path.exists(prior_file_path):
+            with open(prior_file_path, 'rb') as inf:
+                test_user_prior_locations = pickle.load(inf)
+                for user, location in test_user_prior_locations.iteritems():
+                    if user in testUsers:
+                        node_location[user.lower()] = location
+                    else:
+                        print "prior information of user couldn't be assigned because user was not found in test users"
+        else:
+            print "prior file not found."
+    for user, loc in trainUsers.iteritems():
+        user = user.lower()
+        lat, lon = locationStr2Float(loc)
+        trainLats.append(lat)
+        trainLons.append(lon)
+        trainUsersLower[user] = (lat, lon)
+        node_location[user] = (lat, lon)
+        
+    for user, loc in testUsers.iteritems():
+        user = user.lower()
+        lat, lon = locationStr2Float(loc)
+        testUsersLower[user] = (lat, lon)
+    
+    
+    print "the number of train nodes is " + str(len(trainUsers))
+    print "the number of test nodes is " + str(len(testUsers))
+    medianLat = median(trainLats)
+    medianLon = median(trainLons)
+    
+    print "building the graph"
+    graphDic = {}
+    tenpercent = len(netgraph) / 10
+    i = 1
+    for edg in netgraph:
+        if i % tenpercent == 0:
+            print str(10* i/tenpercent) + "%"
+        i += 1          
+        n1n2 = edg.split('\t')
+        n1 = n1n2[0]
+        n2 = n1n2[1]
+        w = 1
+        if weighted:
+            w = netgraph[edg]
+        n1_nbrs = graphDic.get(n1, [])
+        n2_nbrs = graphDic.get(n2, [])
+        for j in range(0, w):
+            n1_nbrs.append(n2)
+            n2_nbrs.append(n1)
+        graphDic[n1] = n1_nbrs
+        graphDic[n2] = n2_nbrs
+        
+    
+    print "finding unlocated nodes"
+    nodes_unknown = [node for node in graphDic if node not in trainUsersLower]
+  
+
+    converged = False
+    print "weighted " + str(weighted)
+    max_iter = 30
+    iter_num = 1
+    print "iterating with max_iter = " + str(max_iter)
+    while not converged:
+        print "iter: " + str(iter_num)
+        located_nodes_count = len(node_location)
+        print str(located_nodes_count) + " nodes have location"
+        for node in nodes_unknown:
+            nbrs = graphDic.get(node, [])
+            nbrlats = []
+            nbrlons = []
+            for nbr in nbrs:
+                if nbr in node_location:
+                    lat, lon = node_location[nbr]
+                    nbrlats.append(lat)
+                    nbrlons.append(lon)
+            if len(nbrlons) > 0:
+                node_location[node] = (median(nbrlats), median(nbrlons))
+        iter_num += 1
+        if iter_num == max_iter:
+            converged = True
+        if len(node_location) == located_nodes_count:
+            print "converged. No new nodes added in this iteration."
+            #converged = True
+        distances = []
+        isolated = 0
+        for user, loc in testUsersLower.iteritems():
+            lat, lon = loc
+            if user not in node_location:
+                isolated += 1
+            predicted_lat, predicted_lon = node_location.get(user, (medianLat, medianLon))
+            dist = distance(lat, lon, predicted_lat, predicted_lon)
+            distances.append(dist)
+        
+        print "mean distance is " + str(mean(distances))
+        print "median distance is " + str(median(distances))
+        print "Accuracy @ 161 k.m. is " + str(100* len([d for d in distances if d < 161])/ float(len(distances)))
+        print "isolated test users are " + str(isolated)
+    print "pickling (testUsersLower, node_location2)"
+    with open(path.join(GEOTEXT_HOME, 'node_location2.pkl'), 'wb') as outf:
+        pickle.dump((testUsersLower, node_location, graphDic), outf)       
 #test_re()
 # euclidean()
 # cross_validate()
 # chart_me()
 # sys.exit()
 # normalizeText()
-initialize(partitionMethod='median', granularity=300, write=True)
+#initialize(partitionMethod='median', granularity=BUCKET_SIZE, write=False)
+direct_graph2()
+#prepare_adsorption_data()
 #save_matlab()    
 #fabian_glasso()
-spams_group_lasso()
+#spams_group_lasso()
 
 #iterative_collective_classification()
 # wordDist()
@@ -3159,7 +3889,7 @@ spams_group_lasso()
 # pybi()
 # dbn()
 # mixtureModel()
-#asclassification(granularity=300, partitionMethod='median', use_mention_dictionary=False)
+#asclassification(granularity=BUCKET_SIZE, partitionMethod='median', use_mention_dictionary=False)
 #classificationBench(granularity=300, partitionMethod='median', use_mention_dictionary=False)
 
 # sgd_optimization_mnist(modelType='class')
