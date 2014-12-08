@@ -93,8 +93,7 @@ import numpy
 import nltk
 import theano
 import theano.tensor as T
-time.sleep(1)
-DATASET_NUMBER = 3
+DATASET_NUMBER = 2
 DATA_HOME = '/home/arahimi/datasets'
 DATASETS = ['cmu', 'na', 'world', 'ptwiki', 'dewiki']
 ENCODINGS = ['latin1', 'utf-8', 'utf-8', 'utf-8', 'utf-8']
@@ -482,10 +481,11 @@ def createTrainDir(granularity, partitionMethod, create_dir=False):
     
     print "Ideal mean dev distance is " + str(mean(devDistances))
     print "Ideal median dev distance is " + str(median(devDistances))
+    print "Ideal Acc@161 dev is " + str(len([dist for dist in devDistances if dist < 161]) / (len(devDistances) + 0.0))
     
     print "Ideal mean test distance is " + str(mean(testDistances))
     print "Ideal median test distance is " + str(median(testDistances))
-        
+    print "Ideal Acc@161 test is " + str(len([dist for dist in testDistances if dist < 161]) / (len(testDistances) + 0.0))
 # createTrainDir()
 def print_class_coordinates():
     for c in classLatMedian:
@@ -1480,7 +1480,7 @@ def classificationBench(granularity, partitionMethod, use_mention_dictionary=Fal
 def asclassification(granularity, partitionMethod, use_mention_dictionary=False):
 
     #partitionLocView(granularity=granularity, partitionMethod=partitionMethod)
-    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor2(use_mention_dictionary=use_mention_dictionary, min_df=10, max_df=0.2)    
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor2(norm=None,use_mention_dictionary=use_mention_dictionary, min_df=10, max_df=0.2)    
     preds, probs, U_test, meanTest, medianTest, meanDev, medianDev = classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity)
     return preds, probs, U_test, meanTest, medianTest, meanDev, medianDev
 
@@ -3683,7 +3683,41 @@ def save_graph(gr):
     with codecs.open(path.join(GEOTEXT_HOME, 'nodes.txt'), 'w', 'ascii') as outf:
         for node in nodes:
             outf.write(node_numbers[node] + '\n')
-             
+def ideal_network_errors():
+    graph_file_address = path.join(GEOTEXT_HOME, 'direct_graph')
+    if os.path.exists(graph_file_address):
+        print "reading netgraph from pickle"
+        with open(graph_file_address, 'rb') as inf:
+            netgraph, trainUsers, testUsers = pickle.load(inf)
+    ideal_distances = []
+    acc161 = 0
+    tenpercent = len(testUsers) / 10
+    i = 0
+    for utest, uloc in testUsers.iteritems():
+        i += 1
+        if i % tenpercent == 0:
+            print str(100 * i / len(testUsers))
+        lat1, lon1 = locationStr2Float(uloc)
+        dists = []
+        for utrain, utrainloc in trainUsers.iteritems():
+            lat2, lon2 = locationStr2Float(utrainloc)
+            d = distance(lat1, lon1, lat2, lon2)
+            dists.append(distance(lat1, lon1, lat2, lon2))
+            if d < 1:
+                break
+        minDist = min(dists)
+        if minDist < 161:
+            acc161 += 1
+        ideal_distances.append(minDist)
+    print "distance number" + str(len(ideal_distances))
+    print "mean "+ str(mean(ideal_distances))
+    print "median " + str(median(ideal_distances))
+    print "Acc @ 161 " + str( (acc161+0.0) / len(ideal_distances) )
+    
+    print "reading prior text-based locations"
+    prior_file_path = path.join(GEOTEXT_HOME, 'preds.pkl')
+
+                
 def direct_graph2():
     global trainUsers
     global testUsers
@@ -3871,7 +3905,8 @@ def direct_graph2():
 # sys.exit()
 # normalizeText()
 #initialize(partitionMethod='median', granularity=BUCKET_SIZE, write=False)
-direct_graph2()
+#direct_graph2()
+ideal_network_errors()
 #prepare_adsorption_data()
 #save_matlab()    
 #fabian_glasso()
