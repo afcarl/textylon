@@ -6,6 +6,7 @@ Created on 4 Sep 2014
 import codecs
 import matplotlib as mpl
 from scipy.sparse.lil import lil_matrix
+from sklearn.feature_extraction import stop_words
 mpl.use('Agg')
 import shutil
 import os
@@ -94,10 +95,11 @@ import nltk
 import theano
 import theano.tensor as T
 DATASET_NUMBER = 2
+TEXT_ONLY = False
 DATA_HOME = '/home/arahimi/datasets'
-DATASETS = ['cmu', 'na', 'world', 'ptwiki', 'dewiki']
-ENCODINGS = ['latin1', 'utf-8', 'utf-8', 'utf-8', 'utf-8']
-buckets = [300, 600, 600, 75, 75]
+DATASETS = ['cmu', 'na', 'world']
+ENCODINGS = ['latin1', 'utf-8', 'utf-8']
+buckets = [300, 2400, 3600]
 BUCKET_SIZE = buckets[DATASET_NUMBER-1]
 GEOTEXT_HOME = path.join(DATA_HOME, DATASETS[DATASET_NUMBER-1])
 data_encoding = ENCODINGS[DATASET_NUMBER-1]
@@ -226,9 +228,11 @@ def users(file, type='train', write=False):
             if len(fields)!=4:
                 print fields
             user = fields[0].strip()
-            lat = str(float(fields[1])).strip()
-            lon = str(float(fields[2])).strip()
+            lat = fields[1]
+            lon = fields[2]
             text = fields[3].strip()
+            if TEXT_ONLY:
+                text = ' '.join([t for t in text.split() if not t.startswith('@')])
             locStr = lat + ',' + lon
             userLocation[user] = locStr
             if type == 'train':
@@ -247,7 +251,6 @@ def users(file, type='train', write=False):
                 devText[user] = text
     
     
-
 
   
 
@@ -374,6 +377,7 @@ def createTrainDir(granularity, partitionMethod, create_dir=False):
     global categories
     categories = []
     filename = path.join(GEOTEXT_HOME, 'processed_data/' + str(granularity).strip() + '_' + partitionMethod + '_clustered.train')
+    print "reading " + filename
     allpoints = []
     allpointsMinLat = []
     allpointsMaxLat = []
@@ -389,7 +393,12 @@ def createTrainDir(granularity, partitionMethod, create_dir=False):
             fields = line.split('\t')
             for field in fields:
                 dims = field.split(',')
-                lat = float(dims[0].strip())
+                try:
+                    lat = float(dims[0].strip())
+                except:
+                    print dims
+                    print line
+                    sys.exit()                                                                                                                                                                                                      
                 if lat > maxlat:
                     maxlat = lat
                 if lat < minlat:
@@ -640,11 +649,15 @@ def loss(preds, U_test, loss='median', save=False):
     sumMedianDistance = 0
     distances = []
     user_location = {}
+    acc = 0.0
     for i in range(0, len(preds)):
         user = U_test[i]
         location = userLocation[user].split(',')
         lat = float(location[0])
         lon = float(location[1])
+        if preds[i]==int(Y_test[i]):
+            acc += 1
+        #print str(Y_test[i]) + " " + str(preds[i])
         prediction = categories[preds[i]]
         medianlat = classLatMedian[prediction]  
         medianlon = classLonMedian[prediction]  
@@ -668,7 +681,7 @@ def loss(preds, U_test, loss='median', save=False):
     print "Mean distance is " + str(mean(distances))
     print "Median distance is " + str(median(distances))
     print "Accuracy @ 161 k.m. is " + str(100* len([d for d in distances if d < 161])/ float(len(distances)))
-    
+    print "Classification Accuracy is " + str(100 * acc/len(preds))
     return mean(distances), median(distances)
 
 def lossbycoordinates(coordinates):
@@ -899,7 +912,7 @@ def feature_extractor(use_mention_dictionary=False, use_idf=True, norm='l2', bin
             
     return X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names
 
-def feature_extractor2(use_mention_dictionary=False, use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=1, max_df=1.0, BuildCostMatrices=False, vectorizer=None):
+def feature_extractor2(use_mention_dictionary=False, use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=1, max_df=1.0, BuildCostMatrices=False, vectorizer=None, stop_words=None):
     '''
     read train, dev and test directories and extract textual features using tfidfvectorizer.
     '''
@@ -943,10 +956,10 @@ def feature_extractor2(use_mention_dictionary=False, use_idf=True, norm='l2', bi
         if use_mention_dictionary:
             print "using @ mention dictionary as vocab..."
             extract_mentions()
-            vectorizer = TfidfVectorizer(use_idf=use_idf, norm=norm, binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=max_df, ngram_range=(1, 1), stop_words=None, vocabulary=mentions)
+            vectorizer = TfidfVectorizer(use_idf=use_idf, norm=norm, binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=max_df, ngram_range=(1, 1), vocabulary=mentions, stop_words=stop_words)
         else:
             print "mindf: " + str(min_df) + " maxdf: " + str(max_df)
-            vectorizer = TfidfVectorizer(use_idf=use_idf, norm=norm, binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=max_df, ngram_range=(1, 1), stop_words='english')
+            vectorizer = TfidfVectorizer(use_idf=use_idf, norm=norm, binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=max_df, ngram_range=(1, 1), stop_words=stop_words)
 
     X_train = vectorizer.fit_transform([trainText[u] for u in U_train])
     #keys = vectorizer.vocabulary_.keys()
@@ -1479,8 +1492,10 @@ def classificationBench(granularity, partitionMethod, use_mention_dictionary=Fal
     '''
 def asclassification(granularity, partitionMethod, use_mention_dictionary=False):
 
+
+    stops = 'english'
     #partitionLocView(granularity=granularity, partitionMethod=partitionMethod)
-    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor2(norm=None,use_mention_dictionary=use_mention_dictionary, min_df=10, max_df=0.2)    
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor2(norm='l2',use_mention_dictionary=use_mention_dictionary, min_df=10, max_df=0.2, stop_words=stops)    
     preds, probs, U_test, meanTest, medianTest, meanDev, medianDev = classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity)
     return preds, probs, U_test, meanTest, medianTest, meanDev, medianDev
 
@@ -3120,21 +3135,32 @@ def euclidean():
     print bb[np.zeros(m, dtype=int), :]
     print np.tile(bb, (m, 1))
 
-def extract_mentions(k=0):
+def extract_mentions(k=0, addTest=False, addDev=False):
+    if addTest and addDev:
+        print "addTest and addDev can not be True in the same time"
+        sys.exit(0)
     print "extracting mention information from text"
     global mentions
     #if it is there load it and return
     mention_file_address = path.join(GEOTEXT_HOME, 'mentions.pkl')
-    if os.path.exists(mention_file_address):
-        print "reading mentions from pickle"
-        with open(mention_file_address, 'rb') as inf:
-            mentions = pickle.load(inf)
-            return
+    if addDev:
+        mention_file_address = mention_file_address + '.dev'
+    RELOAD_MENTIONS = True
+    if RELOAD_MENTIONS:
+        if os.path.exists(mention_file_address):
+            print "reading mentions from pickle"
+            with open(mention_file_address, 'rb') as inf:
+                mentions = pickle.load(inf)
+                return
     text = ''
     #for user in trainUsers:
     #    text += userText[user].lower()
-    print "joining texts"
-    text = ' '.join(trainText.values())
+    if addTest:
+        text = ' '.join(trainText.values() + testText.values() + trainUsers.keys() + testUsers.keys())
+    if addDev:
+        text = ' '.join(trainText.values() + devText.values() + trainUsers.keys() + devUsers.keys())
+    if not addTest and not addDev:
+        text = ' '.join(trainText.values())
     #text = text.lower()
     '''
     if data_encoding in ['utf-8']:
@@ -3149,10 +3175,14 @@ def extract_mentions(k=0):
     print "building the counter"
     mentionsDic = Counter(mentionsList)
     print "frequency thresholding"
-    mentions = [word for word in mentionsDic if mentionsDic[word] > k]
-    with open(mention_file_address, 'wb') as outf:
-        print "writng mentions to pickle"
-        pickle.dump(mentions, outf)
+    if k > 0:
+        mentions = [word for word in mentionsDic if mentionsDic[word] > k]
+    else:
+        mentions = mentionsDic.keys()
+    if RELOAD_MENTIONS:
+        with open(mention_file_address, 'wb') as outf:
+            print "writng mentions to pickle"
+            pickle.dump(mentions, outf)
     
 def spams_groups(feature_names, X_train,type, k=0):
     if type=="mentions":
@@ -3293,17 +3323,21 @@ def spams_group_lasso():
     import numpy as np
     import scipy.sparse as ssp
     myfloat=float
-    print "first solve the dense/sparse issue"
-    sys.exit()
-    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(use_mention_dictionary=False, min_df=2, max_df=1.0, norm=None)
-    extract_mentions()
+    #print "first solve the dense/sparse issue"
+    #sys.exit()
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor2(use_mention_dictionary=False, min_df=10, max_df=1.0, norm=None)
+    #extract_mentions()
     #graph = spams_groups(feature_names,X_train,type="mentions", k=0)
-    graph = spams_groups(feature_names,X_train,type="count", k=0)
+    #graph = spams_groups(feature_names,X_train,type="count", k=0)
     # X should be n_feature x n_sample in spams
     #X_train = normalize(X_train, norm='l2')
-    X_train = X_train.todense()
-    X = np.asfortranarray(X_train)
-    X = spams.normalize(X)
+    #X_train = X_train.todense()
+    #X = np.asfortranarray(X_train)
+    #X2 = ssp.csc_matrix(X)
+    #X = spams.normalize(X)
+    X_train = X_train.tocsc()
+    X_test = X_test.tocsc()
+    X_dev = X_dev.tocsc()
     Y_train = Y_train.reshape((Y_train.shape[0], 1))
     #X = np.asfortranarray(X - np.tile(np.mean(X,0),(X.shape[0],1)),dtype=myfloat)
     #X = spams.normalize(X1)
@@ -3314,35 +3348,39 @@ def spams_group_lasso():
     # Multi-Class classification
 
     param = {'numThreads' : -1,'verbose' : True,
-             'lambda1' : 0.05, 'it0' : 10, 'max_it' : 100,
+             'lambda1' : 0.05, 'it0' : 10, 'max_it' : 200,
              'L0' : 0.1, 'tol' : 1e-3, 'intercept' : False,
              'pos' : False}
     param['loss'] = 'multi-logistic'
-    param['regul'] = 'graph'
-    param['lambda1'] = 0.0000001
+    param['regul'] = 'l1'
+    param['lambda1'] = 0.0000000001
 
     print '\nFISTA + Multi-Class Logistic l1'
     print param
     nclasses = np.max(Y[:])+1
-    W0 = np.zeros((X.shape[1],nclasses * Y.shape[1]),dtype=myfloat,order="FORTRAN")
-    #(W, optim_info) = spams.fistaFlat(Y,X,W0,True,**param)
-    (W, optim_info) = spams.fistaGraph(Y,X,W0,graph,True,**param)
-    X_test = X_test.todense()
-    results = np.dot(X_test, W)
+    W0 = np.zeros((X_train.shape[1],nclasses * Y.shape[1]),dtype=myfloat,order="FORTRAN")
+    (W, optim_info) = spams.fistaFlat(Y,X_train,W0,True,**param)
+    W = ssp.csr_matrix(W)
+    results = X_test.dot(W)
+    results = results.todense()
     preds = np.argmax(results, axis=1)
     print "test results"
     loss(preds, U_test)
     print "development results"
-    X_dev = X_dev.todense()
-    results = np.dot(X_dev, W)
+    #X_dev = X_dev.todense()
+    results = X_dev.dot(W)
+    results = results.todense()
     preds = np.argmax(results, axis=1)
     loss(preds, U_dev)
-    print "train results"
-    results = np.dot(X_train, W)
-    preds = np.argmax(results, axis=1)
-    loss(preds, U_train)
-    print 'mean loss: %f, mean relative duality_gap: %f, number of iterations: %f' %(np.mean(optim_info[0,:]),np.mean(optim_info[2,:]),np.mean(optim_info[3,:]))
-    print "mindf 1  graph e-7"
+    report_train = False
+    if report_train:
+        print "train results"
+        results = X_train.dot(W)
+        results = results.todense()
+        preds = np.argmax(results, axis=1)
+        loss(preds, U_train)
+        print 'mean loss: %f, mean relative duality_gap: %f, number of iterations: %f' %(np.mean(optim_info[0,:]),np.mean(optim_info[2,:]),np.mean(optim_info[3,:]))
+        print "mindf 1  graph e-7"
     Tracer()()
     '''
     # Multi-Class classification
@@ -3392,66 +3430,86 @@ def data_id(i, j):
         return str(j) + '\t' + str(i)
     else:
         return str(i) + '\t' + str(j)
-def prepare_adsorption_data():
-    option=2
-    print "option: " + str(option)
-    if option==1:
-        extract_mentions(k=0)
-        vectorizer = CountVectorizer(encoding=data_encoding, vocabulary=mentions, binary=True)
-        X_train_relational, Y_train, U_train, X_dev_relational, Y_dev, U_dev, X_test_relational, Y_test, U_test, categories, feature_names_relational = feature_extractor(use_mention_dictionary=True, use_idf=False, norm=None, binary=True, sublinear_tf=False, min_df=1, BuildCostMatrices=False, vectorizer=vectorizer)
-        print "union of test and train nodes"
-        X_relational = sparse.vstack([X_train_relational, X_test_relational]).tocsr()
-        print "transposing the relation matrix"
-        X_relational_T = np.transpose(X_relational)
-        # find the number of shared mentions for all pairs of users/samples 
-        print "computing node friendship"
-        pairs = X_relational.dot(X_relational_T)
-        # set the diagonal to zero (the number of shared mentions of a user with herself)
-        #equal1_indices = pairs < 2
-        #pairs[equal1_indices] = 0
-        #pairs = threshold(pairs, 2, 100, 0)
-        pairs.setdiag(0)
-        xindx, yindx = pairs.nonzero()
-        xindx = xindx.tolist()
-        yindx = yindx.tolist()
-        print "writing id_user file"
-        with codecs.open(path.join(GEOTEXT_HOME, 'id_user.pair'), 'w', 'utf-8') as outf:
-            i = 0
-            for u in U_train + U_test:
-                outf.write(str(i) + '\t' + u + '\n')
-                i += 1
-                
-        print "number of nonzeros is " + str(pairs.nnz)
-        tenpercent = pairs.nnz / 10
-        with codecs.open(path.join(GEOTEXT_HOME, 'input_graph.pair'), 'w', 'ascii') as outf:
-            i = 0
-            for x, y in zip(xindx, yindx):
-                    if i % tenpercent == 0:
-                        print "processing " + str(10 + (10* i/tenpercent)) + "%"
-                    i += 1
-                    if y>x:
-                        outf.write(str(x)+ '\t' + str(y) + '\t' + str(pairs[x, y]) + '\n')
-        with codecs.open(path.join(GEOTEXT_HOME, 'seeds.pair'), 'w', 'ascii') as outf:
-            for i in range(0, Y_train.shape[0]):
-                outf.write(str(i) + '\t'+ str(Y_train[i]) + '\t' + '1.0' + '\n')
-        with codecs.open(path.join(GEOTEXT_HOME, 'gold_labels_test.pair'), 'w', 'ascii') as outf:
-            for i in range(0, Y_test.shape[0]):
-                outf.write(str(i + X_train_relational.shape[0]) + '\t'+ str(Y_test[i]) + '\t' + '1.0' + '\n')
 
-    elif option==2:
-        extract_mentions(k=0)
-        sortedNodes = sorted(mentions)
+def prepare_adsorption_data():
+    option=4
+    print "option: " + str(option)
+
+    if option==2:
+        global mentions
+        DEVELOPMENT = False
+        extract_mentions(k=0, addTest=True, addDev=False)
+        
+        if DEVELOPMENT:
+            #sortedNodes = sorted(mentions + [u.lower for u in trainUsers] + [u.lower for u in devUsers])
+            sortedNodes = sorted(mentions)
+        else:
+            #print len(mentions)
+            #sortedNodes = sorted(set(mentions + [u.lower for u in trainUsers] + [u.lower for u in testUsers]))
+            #print len(sortedNodes)
+            sortedNodes = sorted(mentions)
         vocab_cnt = len(sortedNodes)
         idx = range(vocab_cnt)
         vocab = dict(zip(sortedNodes, idx))
         vectorizer = CountVectorizer(encoding=data_encoding, vocabulary=vocab, binary=False)
-        X_train_relational, Y_train, U_train, X_dev_relational, Y_dev, U_dev, X_test_relational, Y_test, U_test, categories, feature_names_relational = feature_extractor(use_mention_dictionary=True, use_idf=False, norm=None, binary=True, sublinear_tf=False, min_df=1, BuildCostMatrices=False, vectorizer=vectorizer)
+        X_train_relational, Y_train, U_train, X_dev_relational, Y_dev, U_dev, X_test_relational, Y_test, U_test, categories, feature_names_relational = feature_extractor2(use_mention_dictionary=True, use_idf=False, norm=None, binary=True, sublinear_tf=False, min_df=1, BuildCostMatrices=False, vectorizer=vectorizer)
+        
+        if DEVELOPMENT:
+            print "producing the development graph..."
+            X_relational = sparse.vstack([X_train_relational, X_dev_relational])
+            U_all = U_train + U_dev                
+            U = [u.lower() for u in U_all]
+            userDic = dict(zip(U, range(0, len(U))))
+            print "writing id_user file"
+            with codecs.open(path.join(GEOTEXT_HOME, 'id_user.dev'), 'w', 'utf-8') as outf:
+                for u in U:
+                    outf.write(str(userDic[u]) + '\t' + u + '\n')
+    
+            assert (len(U)==X_relational.shape[0]), 'number of users is not eq to the number of samples'
+            assert (vocab_cnt==X_relational.shape[1]), 'the number of features is not equal to the number of mentions'
+            already_added = []
+            print "writing seed file"
+            with codecs.open(path.join(GEOTEXT_HOME, 'seeds.dev'), 'w', 'ascii') as outf:
+                for i in range(0, Y_train.shape[0]):
+                    outf.write(str(i) + '\t'+ str(Y_train[i]) + '\t' + '1.0' + '\n')
+            print "writing gold_labels"
+            with codecs.open(path.join(GEOTEXT_HOME, 'gold_labels.dev'), 'w', 'ascii') as outf:
+                for i in range(0, Y_dev.shape[0]):
+                    outf.write(str(i + Y_train.shape[0]) + '\t'+ str(Y_dev[i]) + '\t' + '1.0' + '\n')
+            X_relational = X_relational.tolil()
+            print "writing input_graph"
+            print "number of nonzero cells is " + str(X_relational.nnz)
+            tenpercent = X_relational.nnz / 10
+            xindx, yindx = X_relational.nonzero()
+            xindx = xindx.tolist()
+            yindx = yindx.tolist()
+            with codecs.open(path.join(GEOTEXT_HOME, 'input_graph.dev'), 'w', 'ascii') as outf:
+                i = 1
+                for x, y in zip(xindx, yindx):
+                    if i % tenpercent == 0:
+                        print "processing " + str(i/(10*tenpercent)) + "%"
+                    i += 1
+                    d_id = data_id(x, y)
+                    mention = sortedNodes[y]
+                    u = U[x]
+                    w = X_relational[x, y]
+                    X_relational[x, y] = 0
+                    if mention in U and u in sortedNodes:
+                        w_r = X_relational[userDic[mention], vocab[u]]
+                        w += w_r
+                        if w_r>0:
+                            X_relational[userDic[mention], vocab[u]] = 0   
+                    if w > 0:
+                        outf.write(d_id + '\t' + str(w) + '\n')        
+            
+        #test graph
+        print "producing the test graph"
         X_relational = sparse.vstack([X_train_relational, X_test_relational])
         U_all = U_train + U_test                
         U = [u.lower() for u in U_all]
         userDic = dict(zip(U, range(0, len(U))))
         print "writing id_user file"
-        with codecs.open(path.join(GEOTEXT_HOME, 'id_user'), 'w', 'utf-8') as outf:
+        with codecs.open(path.join(GEOTEXT_HOME, 'id_user_' + str(BUCKET_SIZE)), 'w', 'utf-8') as outf:
             for u in U:
                 outf.write(str(userDic[u]) + '\t' + u + '\n')
 
@@ -3459,11 +3517,11 @@ def prepare_adsorption_data():
         assert (vocab_cnt==X_relational.shape[1]), 'the number of features is not equal to the number of mentions'
         already_added = []
         print "writing seed file"
-        with codecs.open(path.join(GEOTEXT_HOME, 'seeds'), 'w', 'ascii') as outf:
+        with codecs.open(path.join(GEOTEXT_HOME, 'seeds_' + str(BUCKET_SIZE)), 'w', 'ascii') as outf:
             for i in range(0, Y_train.shape[0]):
                 outf.write(str(i) + '\t'+ str(Y_train[i]) + '\t' + '1.0' + '\n')
         print "writing gold_labels"
-        with codecs.open(path.join(GEOTEXT_HOME, 'gold_labels'), 'w', 'ascii') as outf:
+        with codecs.open(path.join(GEOTEXT_HOME, 'gold_labels_' + str(BUCKET_SIZE)), 'w', 'ascii') as outf:
             for i in range(0, Y_test.shape[0]):
                 outf.write(str(i + Y_train.shape[0]) + '\t'+ str(Y_test[i]) + '\t' + '1.0' + '\n')
         X_relational = X_relational.tolil()
@@ -3473,24 +3531,321 @@ def prepare_adsorption_data():
         xindx, yindx = X_relational.nonzero()
         xindx = xindx.tolist()
         yindx = yindx.tolist()
-        with codecs.open(path.join(GEOTEXT_HOME, 'input_graph'), 'w', 'ascii') as outf:
-            i = 1
-            for x, y in zip(xindx, yindx):
-                if i % tenpercent == 0:
-                    print "processing " + str(10 + (10* i/tenpercent)) + "%"
-                i += 1
-                d_id = data_id(x, y)
-                mention = sortedNodes[y]
-                u = U[x]
-                w = X_relational[x, y]
-                X_relational[x, y] = 0
-                if mention in U and u in sortedNodes:
-                    w_r = X_relational[userDic[mention], vocab[u]]
-                    w += w_r
-                    if w_r>0:
-                        X_relational[userDic[mention], vocab[u]] = 0   
-                if w > 0:
-                    outf.write(d_id + '\t' + str(w) + '\n')        
+        JUST_USERS = False
+        if JUST_USERS:
+            with codecs.open(path.join(GEOTEXT_HOME, 'input_graph' + str(BUCKET_SIZE)), 'w', 'ascii') as outf:
+                i = 1
+                for x, y in zip(xindx, yindx):
+                    if i % tenpercent == 0:
+                        print "processing " + str(10* i/tenpercent) + "%"
+                    i += 1
+                    d_id = data_id(x, y)
+                    mention = sortedNodes[y]
+                    u = U[x]
+                    w = X_relational[x, y]
+                    X_relational[x, y] = 0
+                    if mention in U and u in sortedNodes:
+                        w_r = X_relational[userDic[mention], vocab[u]]
+                        w += w_r
+                        if w_r>0:
+                            X_relational[userDic[mention], vocab[u]] = 0   
+                    if w > 0:
+                        outf.write(d_id + '\t' + str(w) + '\n')        
+        else:
+            with codecs.open(path.join(GEOTEXT_HOME, 'input_graph_' + str(BUCKET_SIZE)), 'w', 'ascii') as outf:
+                i = 1
+                for x, y in zip(xindx, yindx):
+                    if i % tenpercent == 0:
+                        print "processing " + str(10* i/tenpercent) + "%"
+                    i += 1
+                    d_id = data_id(x, y)
+                    mention = sortedNodes[y]
+                    u = U[x]
+                    w = X_relational[x, y]
+                    X_relational[x, y] = 0
+                    if mention in U and u in sortedNodes:
+
+                        w_r = X_relational[userDic[mention], vocab[u]]
+                        w += w_r
+                        if w_r>0:
+                            X_relational[userDic[mention], vocab[u]] = 0   
+                    if w > 0:
+                        outf.write(d_id + '\t' + str(w) + '\n')      
+    if option==4:
+        global mentions
+        DEVELOPMENT = True
+        extract_mentions(k=0, addTest=False, addDev=True)
+        
+        if DEVELOPMENT:
+            #sortedNodes = sorted(mentions + [u.lower for u in trainUsers] + [u.lower for u in devUsers])
+            sortedNodes = sorted(mentions)
+        else:
+            #print len(mentions)
+            #sortedNodes = sorted(set(mentions + [u.lower for u in trainUsers] + [u.lower for u in testUsers]))
+            #print len(sortedNodes)
+            sortedNodes = sorted(mentions)
+        vocab_cnt = len(sortedNodes)
+        idx = range(vocab_cnt)
+        vocab = dict(zip(sortedNodes, idx))
+        vectorizer = CountVectorizer(encoding=data_encoding, vocabulary=vocab, binary=False)
+        X_train_relational, Y_train, U_train, X_dev_relational, Y_dev, U_dev, X_test_relational, Y_test, U_test, categories, feature_names_relational = feature_extractor2(use_mention_dictionary=True, use_idf=False, norm=None, binary=True, sublinear_tf=False, min_df=1, BuildCostMatrices=False, vectorizer=vectorizer)
+        if DEVELOPMENT:
+            print "producing the dev graph"
+            X_relational = sparse.vstack([X_train_relational, X_dev_relational])
+            U_all = U_train + U_dev                
+            U = [u.lower() for u in U_all]
+            userDic = dict(zip(U, range(0, len(U))))
+            print "writing id_user file"
+            with codecs.open(path.join(GEOTEXT_HOME, 'id_user_' + str(BUCKET_SIZE) + '.dev'), 'w', 'utf-8') as outf:
+                for u in U:
+                    outf.write(str(userDic[u]) + '\t' + u + '\n')
+    
+            assert (len(U)==X_relational.shape[0]), 'number of users is not eq to the number of samples'
+            assert (vocab_cnt==X_relational.shape[1]), 'the number of features is not equal to the number of mentions'
+            already_added = []
+            print "writing seed file"
+            with codecs.open(path.join(GEOTEXT_HOME, 'seeds_' + str(BUCKET_SIZE) + '.dev'), 'w', 'ascii') as outf:
+                for i in range(0, Y_train.shape[0]):
+                    outf.write(str(i) + '\t'+ str(Y_train[i]) + '\t' + '1.0' + '\n')
+            print "writing gold_labels"
+            with codecs.open(path.join(GEOTEXT_HOME, 'gold_labels_' + str(BUCKET_SIZE) + '.dev'), 'w', 'ascii') as outf:
+                for i in range(0, Y_test.shape[0]):
+                    outf.write(str(i + Y_train.shape[0]) + '\t'+ str(Y_test[i]) + '\t' + '1.0' + '\n')
+            X_relational = X_relational.tolil()
+            print "writing input_graph"
+            print "number of nonzero cells is " + str(X_relational.nnz)
+            tenpercent = X_relational.nnz / 100
+            xindx, yindx = X_relational.nonzero()
+            xindx = xindx.tolist()
+            yindx = yindx.tolist()
+            JUST_USERS = False
+            if JUST_USERS:
+                with codecs.open(path.join(GEOTEXT_HOME, 'input_graph_' + str(BUCKET_SIZE) + '.dev'), 'w', 'ascii') as outf:
+                    i = 1
+                    for x, y in zip(xindx, yindx):
+                        if i % tenpercent == 0:
+                            print "processing " + str(i/(10* tenpercent)) + "%"
+                        i += 1
+                        d_id = data_id(x, y)
+                        mention = sortedNodes[y]
+                        u = U[x]
+                        w = X_relational[x, y]
+                        X_relational[x, y] = 0
+                        if mention in U and u in sortedNodes:
+                            w_r = X_relational[userDic[mention], vocab[u]]
+                            w += w_r
+                            if w_r>0:
+                                X_relational[userDic[mention], vocab[u]] = 0   
+                        if w > 0:
+                            outf.write(d_id + '\t' + str(w) + '\n')        
+            else:
+                with codecs.open(path.join(GEOTEXT_HOME, 'input_graph_' + str(BUCKET_SIZE) + '.dev'), 'w', 'ascii') as outf:
+                    i = 1
+                    user_user_mention_count = 0
+                    for x, y in zip(xindx, yindx):
+                        if i % tenpercent == 0:
+                            print "processing " + str(i/tenpercent) + "%"
+                        i += 1
+                        d_id = data_id(x, y)
+                        w = X_relational[x, y]
+                        X_relational[x, y] = 0
+                        if y < len(U):
+                            user_user_mention_count += 1
+                            w_r = X_relational[y, x]
+                            w += w_r
+                            if w_r>0:
+                                X_relational[y, x] = 0   
+                        if w > 0:
+                            outf.write(d_id + '\t' + str(w) + '\n')    
+            print "development data is ready."  
+            sys.exit()
+
+   
+            
+        #test graph
+        print "producing the test graph"
+        X_relational = sparse.vstack([X_train_relational, X_test_relational])
+        U_all = U_train + U_test                
+        U = [u.lower() for u in U_all]
+        userDic = dict(zip(U, range(0, len(U))))
+        print "writing id_user file"
+        with codecs.open(path.join(GEOTEXT_HOME, 'id_user_' + str(BUCKET_SIZE)), 'w', 'utf-8') as outf:
+            for u in U:
+                outf.write(str(userDic[u]) + '\t' + u + '\n')
+
+        assert (len(U)==X_relational.shape[0]), 'number of users is not eq to the number of samples'
+        assert (vocab_cnt==X_relational.shape[1]), 'the number of features is not equal to the number of mentions'
+        already_added = []
+        print "writing seed file"
+        with codecs.open(path.join(GEOTEXT_HOME, 'seeds_' + str(BUCKET_SIZE)), 'w', 'ascii') as outf:
+            for i in range(0, Y_train.shape[0]):
+                outf.write(str(i) + '\t'+ str(Y_train[i]) + '\t' + '1.0' + '\n')
+        print "writing gold_labels"
+        with codecs.open(path.join(GEOTEXT_HOME, 'gold_labels_' + str(BUCKET_SIZE)), 'w', 'ascii') as outf:
+            for i in range(0, Y_test.shape[0]):
+                outf.write(str(i + Y_train.shape[0]) + '\t'+ str(Y_test[i]) + '\t' + '1.0' + '\n')
+        X_relational = X_relational.tolil()
+        print "writing input_graph"
+        print "number of nonzero cells is " + str(X_relational.nnz)
+        tenpercent = X_relational.nnz / 100
+        xindx, yindx = X_relational.nonzero()
+        xindx = xindx.tolist()
+        yindx = yindx.tolist()
+        JUST_USERS = False
+        if JUST_USERS:
+            with codecs.open(path.join(GEOTEXT_HOME, 'input_graph_' + str(BUCKET_SIZE)), 'w', 'ascii') as outf:
+                i = 1
+                for x, y in zip(xindx, yindx):
+                    if i % tenpercent == 0:
+                        print "processing " + str(i/(10* tenpercent)) + "%"
+                    i += 1
+                    d_id = data_id(x, y)
+                    mention = sortedNodes[y]
+                    u = U[x]
+                    w = X_relational[x, y]
+                    X_relational[x, y] = 0
+                    if mention in U and u in sortedNodes:
+                        w_r = X_relational[userDic[mention], vocab[u]]
+                        w += w_r
+                        if w_r>0:
+                            X_relational[userDic[mention], vocab[u]] = 0   
+                    if w > 0:
+                        outf.write(d_id + '\t' + str(w) + '\n')        
+        else:
+            with codecs.open(path.join(GEOTEXT_HOME, 'input_graph_' + str(BUCKET_SIZE)), 'w', 'ascii') as outf:
+                i = 1
+                user_user_mention_count = 0
+                for x, y in zip(xindx, yindx):
+                    if i % tenpercent == 0:
+                        print "processing " + str(10* i/tenpercent) + "%"
+                        print user_user_mention_count
+                    i += 1
+                    d_id = data_id(x, y)
+                    w = X_relational[x, y]
+                    X_relational[x, y] = 0
+                    if y < len(U):
+                        user_user_mention_count += 1
+                        w_r = X_relational[y, x]
+                        w += w_r
+                        if w_r>0:
+                            X_relational[y, x] = 0   
+                    if w > 0:
+                        outf.write(d_id + '\t' + str(w) + '\n')      
+
+    elif option==3:
+        global trainUsers
+        global testUsers
+        global trainText
+        global testText
+        '''
+        extract_mentions(k=0, addTest=True, addDev=False)
+        sortedNodes = sorted(mentions)
+        vocab_cnt = len(sortedNodes)
+        idx = range(vocab_cnt)
+        vocab = dict(zip(sortedNodes, idx))
+        vectorizer = CountVectorizer(encoding=data_encoding, vocabulary=vocab, binary=False)
+        X_train_relational, Y_train, U_train, X_dev_relational, Y_dev, U_dev, X_test_relational, Y_test, U_test, categories, feature_names_relational = feature_extractor2(use_mention_dictionary=True, use_idf=False, norm=None, binary=True, sublinear_tf=False, min_df=1, BuildCostMatrices=False, vectorizer=vectorizer)
+        '''
+        '''
+        results cmu 
+        not weighted:
+        mean distance is 668.581279917
+        median distance is 277.116433909
+        weighted
+        mean distance is 676.225954801
+        median distance is 255.724939021
+        
+        NA
+        mean distance is 748.483205478
+        median distance is 449.083574218
+        
+        '''
+        weighted = True
+        print "building the direct graph"
+        token_pattern1 = '(?<=^|(?<=[^a-zA-Z0-9-_\\.]))@([A-Za-z]+[A-Za-z0-9_]+)'
+        token_pattern1 = re.compile(token_pattern1)
+        #token_pattern2 = '(?<=^|(?<=[^a-zA-Z0-9-_\\.]))#([A-Za-z]+[A-Za-z0-9_]+)'
+        #token_pattern2 = re.compile(token_pattern2)
+        netgraph = {}
+        l = len(trainText)
+        tenpercent = l / 10
+        i = 1
+        for user, text in trainText.iteritems():
+            user = user.lower()
+            if i % tenpercent == 0:
+                print str(10* i/tenpercent) + "%"
+            i += 1  
+            mentions = [u.lower() for u in token_pattern1.findall(text)] 
+            mentionDic = Counter(mentions)
+            for mention in mentionDic:
+                if mention > user:
+                    k = user + '\t' + mention
+                    netgraph[k] = netgraph.get(k, 0) + mentionDic[mention]
+                else:
+                    k = mention + '\t' + user
+                    netgraph[k] = netgraph.get(k, 0) + mentionDic[mention]
+            
+        print "adding the test graph"
+        for user, text in testText.iteritems():
+            user = user.lower()
+            mentions = [u.lower() for u in token_pattern1.findall(text)]
+            mentionDic = Counter(mentions)
+            for mention in mentionDic:
+                if mention > user:
+                    k = user + '\t' + mention
+                    netgraph[k] = netgraph.get(k, 0) + mentionDic[mention]
+                else:
+                    k = mention + '\t' + user
+                    netgraph[k] = netgraph.get(k, 0) + mentionDic[mention]
+        train_test_users = sorted([u.lower() for u in trainUsers.keys()]) + sorted([u.lower() for u in testUsers.keys()])
+        keysStr = '\t'.join(train_test_users + netgraph.keys())
+        U = set(keysStr.split('\t'))
+        userDic = dict(zip(train_test_users, range(0, len(train_test_users))))
+        mentions_non_user = [u for u in U if u not in userDic]
+        mentionDic = dict(zip(mentions_non_user, range(len(train_test_users), len(train_test_users + mentions_non_user))))
+        trainIndexClasses = {}
+        testIndexClasses = {}
+        for u, c in trainClasses.iteritems():
+            u = u.lower()
+            idx = userDic[u]
+            trainIndexClasses[idx] = c
+
+        for u, c in testClasses.iteritems():
+            u = u.lower()
+            idx = userDic[u]
+            testIndexClasses[idx] = c
+        #Tracer()()
+        print "writing id_user file"
+        with codecs.open(path.join(GEOTEXT_HOME, 'id_user'), 'w', 'utf-8') as outf:
+            for u in train_test_users:
+                outf.write(str(userDic[u]) + '\t' + u + '\n')
+        print "writing seed file"
+        with codecs.open(path.join(GEOTEXT_HOME, 'seeds'), 'w', 'ascii') as outf:
+            for i, c in trainIndexClasses.iteritems():
+                outf.write(str(i) + '\t'+ str(c) + '\t' + '1.0' + '\n')
+        print "writing gold_labels"
+        with codecs.open(path.join(GEOTEXT_HOME, 'gold_labels'), 'w', 'ascii') as outf:
+            for i, c in testIndexClasses.iteritems():
+                outf.write(str(i) + '\t'+ str(c) + '\t' + '1.0' + '\n')
+        print "writing input_graph"
+        with codecs.open(path.join(GEOTEXT_HOME, 'input_graph'), 'w', 'ascii') as outf:        
+            for nodes, w in netgraph.iteritems():
+                nodes = nodes.split('\t')
+                nodeIndices = []
+                if nodes[0] in userDic:
+                    nodeIndices.append(userDic[nodes[0]])
+                else:
+                    nodeIndices.append(mentionDic[nodes[0]])
+
+                if nodes[1] in userDic:
+                    nodeIndices.append(userDic[nodes[1]])
+                else:
+                    nodeIndices.append(mentionDic[nodes[1]])
+                    
+                outf.write(str(nodeIndices[0]) + '\t' + str(nodeIndices[1]) + '\t' + str(w) + '\n')
+        Tracer()()
+        
+            
 
 def direct_graph():
     '''
@@ -3795,7 +4150,7 @@ def direct_graph2():
     trainLons = []
     node_location = {}
     
-    PRIOR = True
+    PRIOR = False
     if PRIOR:
         print "reading prior text-based locations"
         prior_file_path = path.join(GEOTEXT_HOME, 'preds.pkl')
@@ -3897,20 +4252,103 @@ def direct_graph2():
         print "isolated test users are " + str(isolated)
     print "pickling (testUsersLower, node_location2)"
     with open(path.join(GEOTEXT_HOME, 'node_location2.pkl'), 'wb') as outf:
-        pickle.dump((testUsersLower, node_location, graphDic), outf)       
+        pickle.dump((testUsersLower, node_location, graphDic), outf)   
+def junto_postprocessing(multiple=False, dev=False):
+    global Y_dev
+    global Y_test
+    global U_dev
+    global U_test
+    U_test = [u for u in sorted(testUsers)]
+    U_dev = [u for u in sorted(devUsers)]
+    
+    # split a training set and a test set
+    Y_test = np.asarray([testClasses[u] for u in U_test])
+    Y_dev = np.asarray([devClasses[u] for u in U_dev])
+    
+    if not multiple:
+        files = ['/home/arahimi/git/junto-master/examples/simple/data/label_prop_output_' + DATASETS[DATASET_NUMBER - 1] + '_' + str(BUCKET_SIZE)]
+    else:
+        junto_output_dir = '/home/arahimi/git/junto-master/examples/simple/data/outputs'
+        files = glob.glob('/home/arahimi/git/junto-master/examples/simple/data/outputs/label_prop_output*')
+        files = sorted(files)
+    #feature_extractor2(min_df=50)
+
+    for junto_output_file in files:   
+        print junto_output_file
+        id_name_file = '/home/arahimi/git/junto-master/examples/simple/data/' + DATASETS[DATASET_NUMBER - 1] + '/id_user_' + str(BUCKET_SIZE) 
+        if dev:
+            id_name_file = id_name_file + '.dev'
+        name_id = {}
+        id_pred = {}
+        name_pred = {}
+        id_name = {}
+        with codecs.open(id_name_file, 'r', 'utf-8') as inf:
+            for line in inf:
+                fields = line.split()
+                name_id[fields[1]] = fields[0]
+                id_name[fields[0]] = fields[1]
+        testUsersLower = [u.lower() for u in testUsers.keys()]
+        with codecs.open(junto_output_file, 'r', 'utf-8') as inf:
+            for line in inf:
+                fields = line.split('\t')
+                if fields[-2] == 'true':
+                    label_scores = fields[-3]
+                    label = fields[-3].split()[0]
+                    if label == '__DUMMY__':
+                        label = str(len(categories) / 2)
+                    id_pred[fields[0]] = label
+        
+
+        #Tracer()()
+        preds = []
+        if dev:
+            print "working on dev data, changing U_test to U_dev"
+            Users = U_dev
+        else:
+            Users = U_test
+        
+        for u in Users:
+            name_pred[u] = id_pred[name_id[u.lower()]]
+            preds.append(int(id_pred[name_id[u.lower()]]))
+        #print preds
+        #print [int(i) for i in Y_test.tolist()]
+        loss(preds, Users)
+
+        #Tracer()()
+def create_junto_config_files_for_tuning():
+    '''read one config file
+    for each configuration
+        write a new config file
+    '''
+    junto_config_file = '/home/arahimi/git/junto-master/examples/simple/simple_config'
+    with codecs.open(junto_config_file, 'r', 'latin1') as inf:
+        conf_str = inf.read()
+    mu2s = ['10', '2', '1', '1e-1', '1e-8']
+    mu3s = ['10', '2', '1', '1e-1', '1e-8']
+    for mu2 in mu2s:
+        for mu3 in mu3s:
+            result = conf_str.replace('mu2 = 1e-2', 'mu2 = ' + mu2)
+            result = result.replace('mu3 = 1e-2', 'mu3 = ' + mu3)
+            result = result.replace('data/label_prop_output', 'data/outputs/label_prop_output_' + mu2 + '_' + mu3)
+            with codecs.open('/home/arahimi/git/junto-master/examples/simple/confs/simple_config_' + mu2 + '_' + mu3, 'w', 'latin1') as outf:
+                outf.write(result)
+
 #test_re()
 # euclidean()
 # cross_validate()
 # chart_me()
 # sys.exit()
 # normalizeText()
-#initialize(partitionMethod='median', granularity=BUCKET_SIZE, write=False)
+initialize(partitionMethod='median', granularity=BUCKET_SIZE, write=False)
 #direct_graph2()
-ideal_network_errors()
-#prepare_adsorption_data()
+#ideal_network_errors()
+
 #save_matlab()    
 #fabian_glasso()
 #spams_group_lasso()
+prepare_adsorption_data()
+#junto_postprocessing(multiple=False, dev=False)
+#create_junto_config_files_for_tuning()
 
 #iterative_collective_classification()
 # wordDist()
