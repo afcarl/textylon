@@ -8,6 +8,7 @@ import matplotlib as mpl
 from scipy.sparse.lil import lil_matrix
 from sklearn.feature_extraction import stop_words
 from _collections import defaultdict
+from sklearn.decomposition.factor_analysis import FactorAnalysis
 mpl.use('Agg')
 import shutil
 import os
@@ -23,11 +24,13 @@ from sklearn import cross_validation
 from sklearn import metrics
 from  sklearn.datasets import load_files
 import string
+import networkx as nx
+import matplotlib.patches as mpatches
 from datetime import datetime
 import sets
 from sklearn.metrics.pairwise import euclidean_distances, pairwise_distances
 from sklearn.preprocessing import normalize
-from sklearn.decomposition import PCA, TruncatedSVD, NMF, SparsePCA
+from sklearn.decomposition import PCA, TruncatedSVD, NMF, SparsePCA, KernelPCA, RandomizedPCA
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer, strip_accents_ascii, strip_accents_unicode
 from sklearn.feature_selection import SelectKBest, chi2
@@ -35,11 +38,13 @@ from sklearn.linear_model import PassiveAggressiveClassifier
 from sklearn import linear_model
 from sklearn.linear_model import Perceptron
 from sklearn.datasets import dump_svmlight_file
+from diagrams import *
 from sklearn.linear_model import RidgeClassifier
 from sklearn.linear_model import SGDClassifier
 # from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import BernoulliNB, MultinomialNB
 from sklearn.neighbors import KNeighborsClassifier
+from scipy.spatial import ConvexHull, convex_hull_plot_2d
 from sklearn.neighbors import NearestCentroid
 from sklearn.svm import LinearSVC, SVC
 from IPython.core.debugger import Tracer
@@ -47,17 +52,21 @@ from sklearn.utils.extmath import density
 import scipy.sparse as sparse
 from sklearn.neighbors import NearestNeighbors
 from sklearn.feature_selection import SelectKBest
+#this is just for printing colored in shell, you don't want it you comment it and its init line
+from colorama import init, Fore, Back, Style
+init()
 import group_lasso 
 # from extract import get_tokens
 # from time import time
 from math import sqrt
+from matplotlib.ticker import NullFormatter
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import Counter
 import random
 from os import path
 import math
-# from datetime import datetime
+from datetime import datetime
 import glob
 import matplotlib.path as mpath
 import matplotlib.lines as mlines
@@ -82,6 +91,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.neighbors import NearestNeighbors
 from numpy import float16, float32, float64
 from scipy.sparse import csr_matrix, coo_matrix
+from math import radians, sin, cos, sqrt, asin
 import sys
 from scipy import mean
 __docformat__ = 'restructedtext en'
@@ -98,63 +108,6 @@ import theano
 import theano.tensor as T
 print str(datetime.now())
 script_start_time = time.time()
-DATASET_NUMBER = 2
-TEXT_ONLY = False
-DATA_HOME = '/home/arahimi/datasets'
-DATASETS = ['cmu', 'na', 'world']
-ENCODINGS = ['latin1', 'utf-8', 'utf-8']
-buckets = [50 , 2400, 2400]
-reguls = [5e-5, 1e-6, 1e-6]
-BUCKET_SIZE = buckets[DATASET_NUMBER - 1]
-GEOTEXT_HOME = path.join(DATA_HOME, DATASETS[DATASET_NUMBER - 1])
-data_encoding = ENCODINGS[DATASET_NUMBER - 1]
-# GEOTEXT_HOME = '/home/arahimi/Roller Dataset NA'
-users_home = path.join(GEOTEXT_HOME, 'processed_data')
-testfile = path.join(users_home, 'user_info.test')
-devfile = path.join(users_home, 'user_info.dev')
-trainfile = path.join(users_home, 'user_info.train')
-
-print "dataset: " + DATASETS[DATASET_NUMBER - 1]
-lngs = []
-ltts = []
-pointText = {}
-keys = []
-userFirstTime = {}
-userLocation = {}
-locationUser = {}
-userlat = {}
-userlon = {}
-testUsers = {}
-trainUsers = {}
-devUsers = {}
-classLatMedian = {}
-classLonMedian = {}
-classLatMean = {}
-classLonMean = {}
-trainClasses = {}
-devClasses = {}
-testClasses = {}
-categories = []
-mentions = []
-testText = {}
-devText = {}
-trainText = {}
-user_multi_labels = {}
-
-costMatrix = None
-trainCostMatrix = None
-testCostMarix = None
-devCostMatrix = None
-
-X_train = None
-X_dev = None
-X_test = None
-Y_train = None
-Y_dev = None
-Y_test = None
-U_train = None
-U_dev = None
-U_test = None
 
 def downsize_train(populationSize=6713, sampleSize=3356):
     population_lines = xrange(0, populationSize)
@@ -215,6 +168,7 @@ def distance(lat1, lon1, lat2, lon2):
     Calculate the great circle distance between two points 
     on the earth (specified in decimal degrees)
     """
+    '''
     # convert decimal degrees to radians 
     lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
 
@@ -226,9 +180,22 @@ def distance(lat1, lon1, lat2, lon2):
 
     # 6367 km is the radius of the Earth
     km = 6367 * c
-    return km 
+    '''
+    
+    #downloaded from http://rosettacode.org/wiki/Haversine_formula#Python
+    R = 6372.8 # Earth radius in kilometers
+    dLat = radians(lat2 - lat1)
+    dLon = radians(lon2 - lon1)
+    lat1 = radians(lat1)
+    lat2 = radians(lat2)
+    
+    a = sin(dLat/2)**2 + cos(lat1)*cos(lat2)*sin(dLon/2)**2
+    c = 2*asin(sqrt(a))
+    
+    return R * c
+    #return km 
 
-def users(file, type='train', write=False, readText=True):
+def users(file, type='train', write=False, readText=True, downSampleTextCoefficient=1.0):
     global testUsers
     global trainUsers
     global devUsers
@@ -237,7 +204,10 @@ def users(file, type='train', write=False, readText=True):
     global devText
     global trainText
     global locationUser
-    
+    if readText:
+        print("Text is being read.")
+        if downSampleTextCoefficient < 1.0:
+            print("Text is being downSampled with coefficient %d" %(downSampleTextCoefficient))
     with codecs.open(file, 'r', encoding=data_encoding) as inf:
         for line in inf:
             # print line
@@ -247,8 +217,11 @@ def users(file, type='train', write=False, readText=True):
             user = fields[0].strip()
             lat = fields[1]
             lon = fields[2]
-            text = fields[3].strip()
-            if TEXT_ONLY:
+            if readText:
+                text = fields[3].strip()
+                if downSampleTextCoefficient < 1.0:
+                    text = text[0: int(len(text) * downSampleTextCoefficient)]
+            if TEXT_ONLY and readText:
                 text = ' '.join([t for t in text.split() if not t.startswith('@')])
             locStr = lat + ',' + lon
             userLocation[user] = locStr
@@ -304,18 +277,29 @@ def plot_points():
 
 
 
-def partitionLocView(granularity, partitionMethod):
-    fig = plt.figure(figsize=(4,4.2))
+def partitionLocView(granularity, partitionMethod, convexhull=False):
+    fig = plt.figure() #figsize=(4,4.2)
+    points_np_arr = []
     print fig.get_size_inches()
     ax = fig.add_subplot(111)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+    ax.spines['left'].set_visible(False)
     filename = users_home + '/' + str(granularity).strip() + '_' + partitionMethod + '_clustered.train'
+    point_print_percent = 1.0
+    print_lats = []
+    print_lons = []
     allpoints = []
     allpointsMinLat = []
     allpointsMaxLat = []
     allpointsMinLon = []
     allpointsMaxLon = []
+    print_classes = []
     with codecs.open(filename, 'r', encoding=data_encoding) as inf:
+        class_line_number = -1
         for line in inf:
+            class_line_number += 1
             points = []
             minlat = 1000
             maxlat = -1000
@@ -336,35 +320,44 @@ def partitionLocView(granularity, partitionMethod):
                     minlon = lon                
                 point = [lat, lon]
                 points.append(point)
+                if random.random() < point_print_percent:
+                    print_lats.append(lat)
+                    print_lons.append(lon)
+                    print_classes.append(class_line_number)
             allpointsMinLat.append(minlat)
             allpointsMaxLat.append(maxlat)
             allpointsMaxLon.append(maxlon)
             allpointsMinLon.append(minlon)
             allpoints.append(points)
-    x = []
-    y = []
-    for i in range(0, len(allpointsMaxLat)):
-        y.append(allpointsMinLat[i])
-        y.append(allpointsMinLat[i])
-        y.append(allpointsMaxLat[i])
-        y.append(allpointsMaxLat[i])
-         
-        x.append(allpointsMinLon[i])
-        x.append(allpointsMaxLon[i])
-        x.append(allpointsMinLon[i])
-        x.append(allpointsMaxLon[i])
-        
-        rect = mpatches.Rectangle((allpointsMinLon[i], allpointsMinLat[i]), allpointsMaxLon[i] - allpointsMinLon[i], allpointsMaxLat[i] - allpointsMinLat[i], facecolor='white')
-        ax.add_artist(rect)
-        ax.set_xlim([-125, -60])  # pylab.xlim([-400, 400])
-        ax.set_ylim([25, 50])
-        xticks = ax.xaxis.get_major_ticks()
-        yticks = ax.yaxis.get_major_ticks()
-        for i in range(2, len(xticks)-1):
-             xticks[i].label1.set_visible(False)
-        for i in range(1, len(yticks)-1):
-             yticks[i].label1.set_visible(False)
-        plt.tick_params(axis='both', which='major', labelsize=9)
+            if convexhull:
+                point_arr = np.asarray(points)
+                points_np_arr.append(point_arr)
+    if not convexhull:
+        x = []
+        y = []
+        for i in range(0, len(allpointsMaxLat)):
+            y.append(allpointsMinLat[i])
+            y.append(allpointsMinLat[i])
+            y.append(allpointsMaxLat[i])
+            y.append(allpointsMaxLat[i])
+             
+            x.append(allpointsMinLon[i])
+            x.append(allpointsMaxLon[i])
+            x.append(allpointsMinLon[i])
+            x.append(allpointsMaxLon[i])
+            
+            rect = mpatches.Rectangle((allpointsMinLon[i], allpointsMinLat[i]), allpointsMaxLon[i] - allpointsMinLon[i], allpointsMaxLat[i] - allpointsMinLat[i], facecolor='white')
+            #should be uncommented if we want the rectangles
+            #ax.add_artist(rect)
+            ax.set_xlim([-125, -60])  # pylab.xlim([-400, 400])
+            ax.set_ylim([25, 50])
+            xticks = ax.xaxis.get_major_ticks()
+            yticks = ax.yaxis.get_major_ticks()
+            for i in range(2, len(xticks)-1):
+                 xticks[i].label1.set_visible(False)
+            for i in range(1, len(yticks)-1):
+                 yticks[i].label1.set_visible(False)
+            plt.tick_params(axis='both', which='major', labelsize=9)
 
         
          
@@ -387,13 +380,37 @@ def partitionLocView(granularity, partitionMethod):
     # ax.add_collection(p)
     # ax.xaxis.set_major_locator(ticker.MultipleLocator(20)) # (MultipleLocator(20)) 
     # ax.yaxis.set_major_locator(ticker.MultipleLocator(20)) # (MultipleLocator(20)) 
-    plt.xlabel('Longitude', fontsize=9)
-    plt.ylabel('Latitude', fontsize=9)
+    ##plt.xlabel('Longitude', fontsize=9)
+    ##plt.ylabel('Latitude', fontsize=9)
+    ##print_point_sizes = [1] * len(print_lats)
+    ##colors = [int(i % 23) for i in print_classes]
+    #median k-dtree plotting
+    ##plt.plot(print_lons, print_lats , 'k.', markersize=0.1)
+    #svd plotting
+    #plt.scatter(print_lons, print_lats, c=colors, marker='x', s=2)
+    #convex hull plotting
+    if convexhull:
+        
+        for i in range(len(points_np_arr)):
+            points = points_np_arr[i]
+            #print points.shape
+            if points.shape[0] < 3:
+                continue
+            convex_hull = ConvexHull(points)
+            #Tracer()()
+            #for simplex in convex_hull.simplices:
+                #plt.plot(points[simplex,0], points[simplex,1], 'k-')
+            patch = mpatches.Polygon(points[convex_hull.vertices])
+            ax.add_patch(patch)
+            
+                #plt.plot(points[:,0], points[:, 1])
+    
     #plt.title('US Map of Twitter Users partitioned by ' + partitionMethod + ' method: ' + str(granularity).strip() + ' person per cluster')
-    plt.savefig(filename + '.jpg')
+    plt.savefig(filename + '.pdf', format='pdf')
     plt.close()
     print "the plot saved in " + filename + '.jpg'
     # plt.show()  # pylab.show()            
+    
 
 
 
@@ -504,6 +521,9 @@ def createTrainDir(granularity, partitionMethod, create_dir=False):
             locusers = locationUser[locationStr]
             user_class = dict(zip(locusers, [i] * len(locusers)))
             trainClasses.update(user_class)
+            
+            #Tracer()()
+            #Tracer()()
             #for user in locusers:
             #    trainClasses[user] = i
             # for each user in this location find the text
@@ -969,7 +989,7 @@ def feature_extractor(use_mention_dictionary=False, use_idf=True, norm='l2', bin
     Reduction_D = 1000
     if DO_SVD:
         print("dimension reduction svd with d=%d" % Reduction_D)
-        svd = TruncatedSVD(n_components=Reduction_D, algorithm="randomized", n_iterations=5, random_state=None, tol=0)
+        svd = TruncatedSVD(n_components=Reduction_D, algorithm="randomized", n_iter=5, random_state=None, tol=0)
         X_train = svd.fit_transform(X_train)
         X_test = svd.transform(X_test)
         X_dev = svd.transform(X_dev)
@@ -1128,7 +1148,7 @@ def feature_extractor2(use_mention_dictionary=False, use_idf=True, norm='l2', bi
     Reduction_D = 1000
     if DO_SVD:
         print("dimension reduction svd with d=%d" % Reduction_D)
-        svd = TruncatedSVD(n_components=Reduction_D, algorithm="randomized", n_iterations=5, random_state=None, tol=0)
+        svd = TruncatedSVD(n_components=Reduction_D, algorithm="randomized", n_iter=5, random_state=None, tol=0)
         X_train = svd.fit_transform(X_train)
         X_test = svd.transform(X_test)
         X_dev = svd.transform(X_dev)
@@ -1358,7 +1378,7 @@ def loadGPData(DO_SVD=False, Reduction_D=100):
     
     if DO_SVD:
         print("dimension reduction svd with d=%d" % Reduction_D)
-        svd = TruncatedSVD(n_components=Reduction_D, algorithm="randomized", n_iterations=5, random_state=None, tol=0)
+        svd = TruncatedSVD(n_components=Reduction_D, algorithm="randomized", n_iter=5, random_state=None, tol=0)
         X_train = svd.fit_transform(X_train)
         X_test = svd.transform(X_test)
         X_dev = svd.transform(X_dev)
@@ -1502,7 +1522,7 @@ def wirelessSGD(max_iters=100, kernel=None, optimize=True, plot=True):
         raw_input()
     return m
 
-def initialize(partitionMethod, granularity, write=False, readText=True):    
+def initialize(partitionMethod, granularity, write=False, readText=True, downSampleTextCoefficient=1.0, reload_init=False):    
     global lngs
     global ltts
     global keys
@@ -1521,6 +1541,7 @@ def initialize(partitionMethod, granularity, write=False, readText=True):
     global devClasses
     global testClasses
     global categories
+    
 
 
     lngs = []
@@ -1541,11 +1562,18 @@ def initialize(partitionMethod, granularity, write=False, readText=True):
     devClasses = {}
     testClasses = {}
     categories = []
-    
-
+    reload_file = path.join(GEOTEXT_HOME + '/init_' + DATASETS[DATASET_NUMBER - 1]  + '_' + str(BUCKET_SIZE) + '.pkl')
+    if reload_init and not readText:
+        if path.exists(reload_file):
+            with open(reload_file, 'rb') as inf:
+                #print('reading info from %s' %(reload_file) )
+                print(Fore.RED + 'reading info from %s' %(reload_file))
+                print(Fore.RESET)
+                classLatMean, classLonMedian, classLatMedian, classLonMean, userLocation, categories, testUsers, testClasses, devUsers, devClasses = pickle.load(inf)
+                return
     # readGeoTextRecords(encoding=data_encoding)
     print 'reading (user_info.) train, dev and test file and building trainUsers, devUsers and testUsers with their locations'
-    users(trainfile, 'train', write, readText=readText)
+    users(trainfile, 'train', write, readText=readText, downSampleTextCoefficient=downSampleTextCoefficient)
     users(devfile, 'dev', write, readText=readText)
     users(testfile, 'test', write, readText=readText)
     print "the number of train" + " users is " + str(len(trainUsers))
@@ -1554,7 +1582,11 @@ def initialize(partitionMethod, granularity, write=False, readText=True):
     # print 'total ' + str(len(userLocation)).strip() + " users."
     # fillUserByLocation()
     # fillTextByUser(encoding=data_encoding)
-    create_directories(granularity, partitionMethod, write)        
+    create_directories(granularity, partitionMethod, write)  
+    if reload_init and not readText:
+        print('writing init info in %s' %(reload_file))
+        with open(reload_file, 'wb') as outf:
+            pickle.dump((classLatMean, classLonMedian, classLatMedian, classLonMean, userLocation, categories, testUsers, testClasses, devUsers, devClasses), outf)
     print "initialization finished"
 
 def classificationBench(granularity, partitionMethod, use_mention_dictionary=False):
@@ -1607,7 +1639,7 @@ def asclassification(granularity, partitionMethod, use_mention_dictionary=False)
     stops = 'english'
     # partitionLocView(granularity=granularity, partitionMethod=partitionMethod)
     X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor2(norm='l2', use_mention_dictionary=use_mention_dictionary, min_df=10, max_df=0.2, stop_words=stops)    
-    for regul in [1e-5]:
+    for regul in [reguls[DATASET_NUMBER-1]]:
         preds, probs, U_test, meanTest, medianTest, meanDev, medianDev = classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity, regul=regul)
     return preds, probs, U_test, meanTest, medianTest, meanDev, medianDev
 
@@ -3542,7 +3574,7 @@ def data_id(i, j):
         return str(j) + '\t' + str(i)
     else:
         return str(i) + '\t' + str(j)
-def prepare_adsorption_data_collapsed(DEVELOPMENT=False, ADD_TEXT_LEARNER=False, CELEBRITY_THRESHOLD=100000):
+def prepare_adsorption_data_collapsed(DEVELOPMENT=False, ADD_TEXT_LEARNER=False, CELEBRITY_THRESHOLD=100000, build_networkx_graph=False, DIRECT_GRAPH_WEIGHTED=False):
     global trainUsers
     global testUsers
     global trainText
@@ -3552,17 +3584,25 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, ADD_TEXT_LEARNER=False,
     global U_test
     global U_dev
     global categories
+    global mention_graph
     DIRECT_MULTIPLICATION = False
     PAIRWISE = False
     DIRECT_GRAPH = True
     CONFIDENCE = 0.01
     MULTI_LABEL = False
     DONGLE = True
-    
+    dongle_nodes = None
+    dongle_preds = None
+    dongle_probs = None
     U_train = [u for u in sorted(trainUsers)]
     U_test = [u for u in sorted(testUsers)]
     U_dev = [u for u in sorted(devUsers)]
-
+    text_str = ''
+    if ADD_TEXT_LEARNER:
+        text_str = '.text'
+    weighted_str = ''
+    if DIRECT_GRAPH_WEIGHTED:
+        weighted_str = '.weighted'
     
 
 
@@ -3602,13 +3642,19 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, ADD_TEXT_LEARNER=False,
         print "dongle is " + str(DONGLE)
         #read users and predictions
         result_dump_file = path.join(GEOTEXT_HOME, 'results-' + DATASETS[DATASET_NUMBER-1] + '-' + str(BUCKET_SIZE) + '.pkl')
+        t_preds, d_preds, t_users, d_users, t_probs, d_probs = None, None, None, None, None, None
         with open(result_dump_file, 'rb') as inf:
             t_preds, d_preds, t_users, d_users, t_probs, d_probs = pickle.load(inf)
-        dongle_nodes = t_users
-        dongle_preds = t_preds
+
         if DEVELOPMENT:
             dongle_nodes = d_users
             dongle_preds = d_preds
+            dongle_probs = d_probs
+        else:
+            dongle_nodes = t_users
+            dongle_preds = t_preds
+            dongle_probs = t_probs
+            
                       
     if DIRECT_GRAPH:
         pass
@@ -3622,7 +3668,7 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, ADD_TEXT_LEARNER=False,
             X_relational = sparse.vstack([X_train_relational, X_test_relational]).tocsr()
         
     print "writing id_user"
-    with codecs.open(path.join(GEOTEXT_HOME, 'id_user_' + str(BUCKET_SIZE) + devStr), 'w', 'ascii') as outf:
+    with codecs.open(path.join(GEOTEXT_HOME, 'id_user_' + str(BUCKET_SIZE) + devStr + text_str + weighted_str), 'w', 'ascii') as outf:
         for i in range(0, len(trainUsersLower)):
             outf.write(str(i) + '\t' + trainUsersLower[i] + '\t' + '1.0' + '\n')
         if DEVELOPMENT:
@@ -3633,7 +3679,7 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, ADD_TEXT_LEARNER=False,
                 outf.write(str(i + len(trainUsersLower)) + '\t' + testUsersLower[i] + '\t' + '1.0' + '\n')
 
     print "writing seeds"
-    with codecs.open(path.join(GEOTEXT_HOME, 'seeds_' + str(BUCKET_SIZE) + devStr), 'w', 'ascii') as outf:
+    with codecs.open(path.join(GEOTEXT_HOME, 'seeds_' + str(BUCKET_SIZE) + devStr + text_str + weighted_str), 'w', 'ascii') as outf:
         for i in range(0, len(trainUsersLower)):
             if MULTI_LABEL:
                 user = U_train[i]
@@ -3646,12 +3692,12 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, ADD_TEXT_LEARNER=False,
         if ADD_TEXT_LEARNER:
             for i in range(0, len(dongle_nodes)):
                 if DONGLE:
-                    outf.write(str(i + len(trainUsersLower))+'.T' + '\t' + str(d_preds[i]) + '\t' + str(np.max(t_probs[i])) + '\n')
+                    outf.write(str(i + len(trainUsersLower))+'.T' + '\t' + str(dongle_preds[i]) + '\t' + str(np.max(dongle_probs[i])) + '\n')
                 else:
-                    outf.write(str(i + len(trainUsersLower)) + '\t' + str(d_preds[i]) + '\t' + str(np.max(t_probs[i])) + '\n')
+                    outf.write(str(i + len(trainUsersLower)) + '\t' + str(dongle_preds[i]) + '\t' + str(np.max(dongle_probs[i])) + '\n')
             
     print "writing gold_labels"
-    with codecs.open(path.join(GEOTEXT_HOME, 'gold_labels_' + str(BUCKET_SIZE) + devStr), 'w', 'ascii') as outf:
+    with codecs.open(path.join(GEOTEXT_HOME, 'gold_labels_' + str(BUCKET_SIZE) + devStr + text_str + weighted_str), 'w', 'ascii') as outf:
         if DEVELOPMENT:
             for i in range(0, len(devUsersLower)):
                 outf.write(str(i + len(trainUsersLower)) + '\t' + str(Y_dev[i]) + '\t' + '1.0' + '\n')
@@ -3690,7 +3736,7 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, ADD_TEXT_LEARNER=False,
         tenpercent = pairs.nnz / 100
         # xindx = xindx.tolist()
         # yindx = yindx.tolist()
-        with codecs.open(path.join(GEOTEXT_HOME, 'input_graph_' + str(BUCKET_SIZE) + devStr), 'w', 'ascii') as outf:
+        with codecs.open(path.join(GEOTEXT_HOME, 'input_graph_' + str(BUCKET_SIZE) + devStr + text_str + weighted_str), 'w', 'ascii') as outf:
             i = 1
             for xindx, yindx, w in zip(pairs.row, pairs.col, pairs.data):
                 # w = pairs[xindx, yindx]
@@ -3718,25 +3764,7 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, ADD_TEXT_LEARNER=False,
                     continue
                 outf.write(str(xindx) + '\t' + str(yindx) + '\t' + str(w) + '\n')
 
-    if DIRECT_GRAPH:
-        save_gr = False
-        '''
-        results cmu 
-        not weighted:
-        mean distance is 668.581279917
-        median distance is 277.116433909
-        weighted
-        mean distance is 676.225954801
-        median distance is 255.724939021
-        
-        NA
-        mean distance is 748.483205478
-        median distance is 449.083574218
-        
-        '''
-        
-        weighted = True
-        graph_file_address = path.join(GEOTEXT_HOME, 'direct_graph')
+    if DIRECT_GRAPH and not DIRECT_GRAPH_WEIGHTED:
         doubles = 0
         trainIdx = range(len(trainUsersLower))
         trainUsersLowerDic = dict(zip(trainUsersLower, trainIdx))
@@ -3763,6 +3791,9 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, ADD_TEXT_LEARNER=False,
         print "The number of test users found in train users is " + str(doubles)
         vocab_cnt = len(U_all)
         idx = range(vocab_cnt)
+        if build_networkx_graph:
+            mention_graph = nx.Graph()
+            mention_graph.add_nodes_from(idx)
         node_id = dict(zip(U_all, idx))
         node_lower_id = {}
         #data and indices of a coo matrix to be populated
@@ -3827,35 +3858,35 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, ADD_TEXT_LEARNER=False,
             if i % tenpercent == 0:
                 print str(10 * i / tenpercent) + "%"
             i += 1  
+            
             if len(user_ids) > CELEBRITY_THRESHOLD:
                 celebrities_count += 1
-                if celebrities_count % 100 ==0:
-                    print "the number of celebrities is " + str(celebrities_count) + " till now."
-                #print "the number of mentioners for this mentnion is very high: "+  mention + " " + str(len(user_ids))
                 continue
+            
             for user_id1 in user_ids:
                 for user_id2 in user_ids:
                     if user_id1 < user_id2:
-                        coordinates.add((user_id1, user_id1))
+                        coordinates.add((user_id1, user_id2))
                     elif user_id2 < user_id1:
                         coordinates.add((user_id2, user_id1))
         
-        
+        print "The number of celebrities is " + str(celebrities_count) + " ."
         rows = [row for row,col in coordinates]
         cols = [col for row,col in coordinates]
         data = [True] * len(rows)
         print "The number of edges is " + str(len(rows))
         data = np.asarray(data)
         rows = np.asarray(rows)
-        cols = np.asarray(cols)                 
+        cols = np.asarray(cols)  
+        #Tracer()()               
         pairs = coo_matrix((data,(rows,cols)), shape=(rows.shape[0],cols.shape[0]), dtype=np.bool_)
-        print "writing the graph"
+        print "writing the binary graph"
         xindx, yindx = pairs.nonzero()
         tenpercent = pairs.nnz / 10
         # xindx = xindx.tolist()
         # yindx = yindx.tolist()
         pairs_dtype = pairs.dtype
-        with codecs.open(path.join(GEOTEXT_HOME, 'input_graph_' + str(BUCKET_SIZE) + devStr), 'w', 'ascii') as outf:
+        with codecs.open(path.join(GEOTEXT_HOME, 'input_graph_' + str(BUCKET_SIZE) + devStr + text_str + weighted_str), 'w', 'ascii') as outf:
             i = 1
             for xindx, yindx, w in zip(pairs.row, pairs.col, pairs.data):
                 # w = pairs[xindx, yindx]
@@ -3865,16 +3896,262 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, ADD_TEXT_LEARNER=False,
                 if pairs_dtype == np.bool_:
                     w = 1.0
                 outf.write(str(xindx) + '\t' + str(yindx) + '\t' + str(w) + '\n')
+                if build_networkx_graph:
+                    mention_graph.add_edge(xindx, yindx, attr_dict = {'w':1})
             if ADD_TEXT_LEARNER and DONGLE:
                 for i in range(0, len(dongle_nodes)):
                     outf.write(str(i + len(trainUsersLower))+'.T' + '\t' + str(i + len(trainUsersLower)) + '\t' + '1.0' + '\n')                  
              
-                
+        if build_networkx_graph:
+            DRAW_NETWORK = False
+            if DRAW_NETWORK:
+                #pos=nx.spring_layout(graph) # positions for all nodes
+                pos = nx.spectral_layout(mention_graph)
+                nx.draw_networkx_nodes(mention_graph,pos,
+                           nodelist=range(0, len(trainUsersLower)),
+                           node_color='g',
+                           node_size=1,
+                       alpha=0.8)
+                nx.draw_networkx_nodes(mention_graph,pos,
+                           nodelist=range(len(trainUsersLower), len(trainUsersLower) + len(u_text_unknown)),
+                           node_color='r',
+                           node_size=1,
+                       alpha=0.8)
+                nx.draw_networkx_edges(mention_graph, pos,
+                            edgelist=None,
+                            width=0.01,
+                            edge_color='k',
+                            style='solid',
+                            alpha=0.1,
+                            edge_cmap=None,
+                            edge_vmin=None,
+                            edge_vmax=None,
+                            ax=None,
+                            arrows=False,
+                            label=None)
+                #nx.draw(graph, pos) 
+                #print "saving the graph in " + GEOTEXT_HOME + "/Graph.pdf"
+                plt.savefig(GEOTEXT_HOME + "/graph.pdf", format="pdf")
+                plt.close()
+            
+            print "the number of components is %d" %(len(list(nx.connected_components(mention_graph))))
+            
+            #degree
+            DRAW_DEGREE = False
+            if DRAW_DEGREE:
+                print "computing degrees of connectivity"
+                degrees = sorted(mention_graph.degree().values())
+                degree_counter = Counter(degrees)
+                labels, values = zip(*degree_counter.items())
+                indexes = np.arange(len(labels))
+                width = 1
+                plt.bar(indexes, values, width)
+                plt.xticks(indexes + width * 0.5, labels)
+                plt.savefig(GEOTEXT_HOME + '/degrees.pdf', format='pdf') 
+                plt.close()
+                    
+            #shortest paths
+            DRAW_SHORTEST_PATH = False
+            if DRAW_SHORTEST_PATH:
+                shortest_paths = nx.all_pairs_shortest_path_length(mention_graph, cutoff=None)
+            
+    if DIRECT_GRAPH_WEIGHTED:
+        doubles = 0
+        trainIdx = range(len(trainUsersLower))
+        trainUsersLowerDic = dict(zip(trainUsersLower, trainIdx))
+        if DEVELOPMENT:
+            devStr = '.dev'
+            for i in range(0, len(devUsersLower)):
+                u = devUsersLower[i]
+                if u in trainUsersLowerDic:
+                    devUsersLower[i] = u + '_double00'
+                    doubles += 1
+            u_unknown = devUsersLower
+            u_text_unknown = devText
+            U_all = U_train + U_dev
+        else:
+            for i in range(0, len(testUsersLower)):
+                u = testUsersLower[i]
+                if u in trainUsersLowerDic:
+                    testUsersLower[i] = u + '_double00'
+                    doubles += 1
+            u_text_unknown = testText
+            u_unknown = testUsersLower
+            U_all = U_train + U_test  
+        U_all_lower = [u.lower() for u in U_all]
+        print "The number of test users found in train users is " + str(doubles)
+        vocab_cnt = len(U_all)
+        idx = range(vocab_cnt)
+        if build_networkx_graph:
+            mention_graph = nx.Graph()
+            mention_graph.add_nodes_from(idx)
+        node_id = dict(zip(U_all, idx))
+        node_lower_id = {}
+        #data and indices of a coo matrix to be populated
+        coordinates = Counter()
+        data = []
+        for node, id in node_id.iteritems():
+            node_lower_id[node.lower()] = id
+        assert (len(node_id) == len(trainUsersLower) + len(u_unknown)), 'number of unique users is not eq u_train + u_test'
+        print "the number of nodes is " + str(vocab_cnt)
+        print "building the direct graph"
+        token_pattern1 = '(?<=^|(?<=[^a-zA-Z0-9-_\\.]))@([A-Za-z]+[A-Za-z0-9_]+)'
+        token_pattern1 = re.compile(token_pattern1)
+        mention_users = defaultdict(Counter)
+        l = len(trainText)
+        tenpercent = l / 10
+        i = 1
+        for user, text in trainText.iteritems():
+            user_id = node_id[user]
+            if i % tenpercent == 0:
+                print str(10 * i / tenpercent) + "%"
+            i += 1  
+            mentions = [u.lower() for u in token_pattern1.findall(text)] 
+            mentionDic = Counter(mentions)
+            for mention in mentionDic:
+                # check if mention is a user node
+                mention_id = node_lower_id.get(mention, -1)
+                if mention_id != -1:    
+                    if mention_id != user_id:
+                        if user_id < mention_id:
+                            coordinates[(user_id, mention_id)] += 1
+                        elif mention_id < user_id:
+                            coordinates[(mention_id, user_id)] += 1
+                    
+                mention_users[mention][user_id] += 1
+        
+            
+        print "adding the test graph"
+        for user, text in u_text_unknown.iteritems():
+            user_id = node_id[user]
+            mentions = [u.lower() for u in token_pattern1.findall(text)]
+            mentionDic = Counter(mentions)
+            for mention in mentionDic:
+                mention_id = node_lower_id.get(mention, -1)
+                if mention_id != -1:
+                    if mention_id != user_id:
+                        if user_id < mention_id:
+                            coordinates[(user_id, mention_id)] += 1
+                        elif mention_id < user_id:
+                            coordinates[(mention_id, user_id)] += 1
+                mention_users[mention][user_id] += 1
+        
+        
+        
+        
 
+        print "setting weighted relationships."
+        l = len(mention_users)
+        tenpercent = l / 10
+        i = 1
+        celebrities_count = 0
+        for mention, user_ids in mention_users.iteritems():
+            if i % tenpercent == 0:
+                print str(10 * i / tenpercent) + "%"
+            i += 1  
+            if len(user_ids) > CELEBRITY_THRESHOLD:
+                celebrities_count += 1
+                continue
+            
+            for user_id1, freq1 in user_ids.iteritems():
+                for user_id2, freq2 in user_ids.iteritems():
+                    if user_id1 < user_id2:
+                        coordinates[(user_id1, user_id2)] += (freq1 + freq2)/2 
+                    elif user_id2 < user_id1:
+                        coordinates[(user_id2, user_id1)] += (freq1 + freq2)/2
+        
+        print "The number of celebrities is " + str(celebrities_count) + " ."
+        rows = [row for row,col in coordinates]
+        cols = [col for row,col in coordinates]
+        data = [coordinates[(row,col)] for row,col in coordinates]
+        print "The number of edges is " + str(len(rows))
+        data = np.asarray(data)
+        rows = np.asarray(rows)
+        cols = np.asarray(cols)  
+        #Tracer()()               
+        pairs = coo_matrix((data,(rows,cols)), shape=(rows.shape[0],cols.shape[0]), dtype=np.float)
+        print "writing the weighted graph"
+        xindx, yindx = pairs.nonzero()
+        tenpercent = pairs.nnz / 10
+        # xindx = xindx.tolist()
+        # yindx = yindx.tolist()
+        pairs_dtype = pairs.dtype
+        with codecs.open(path.join(GEOTEXT_HOME, 'input_graph_' + str(BUCKET_SIZE) + devStr + text_str + weighted_str), 'w', 'ascii') as outf:
+            i = 1
+            for xindx, yindx, w in zip(pairs.row, pairs.col, pairs.data):
+                # w = pairs[xindx, yindx]
+                if i % tenpercent == 0:
+                    print "processing " + str(10 * i / tenpercent) + "%"
+                i += 1
+                if pairs_dtype == np.bool_:
+                    w = 1.0
+                outf.write(str(xindx) + '\t' + str(yindx) + '\t' + str(w) + '\n')
+                if build_networkx_graph:
+                    mention_graph.add_edge(xindx, yindx, attr_dict = {'w':1})
+            if ADD_TEXT_LEARNER and DONGLE:
+                for i in range(0, len(dongle_nodes)):
+                    outf.write(str(i + len(trainUsersLower))+'.T' + '\t' + str(i + len(trainUsersLower)) + '\t' + '1.0' + '\n')                  
+             
+        if build_networkx_graph:
+            DRAW_NETWORK = False
+            if DRAW_NETWORK:
+                #pos=nx.spring_layout(graph) # positions for all nodes
+                pos = nx.spectral_layout(mention_graph)
+                nx.draw_networkx_nodes(mention_graph,pos,
+                           nodelist=range(0, len(trainUsersLower)),
+                           node_color='g',
+                           node_size=1,
+                       alpha=0.8)
+                nx.draw_networkx_nodes(mention_graph,pos,
+                           nodelist=range(len(trainUsersLower), len(trainUsersLower) + len(u_text_unknown)),
+                           node_color='r',
+                           node_size=1,
+                       alpha=0.8)
+                nx.draw_networkx_edges(mention_graph, pos,
+                            edgelist=None,
+                            width=0.01,
+                            edge_color='k',
+                            style='solid',
+                            alpha=0.1,
+                            edge_cmap=None,
+                            edge_vmin=None,
+                            edge_vmax=None,
+                            ax=None,
+                            arrows=False,
+                            label=None)
+                #nx.draw(graph, pos) 
+                #print "saving the graph in " + GEOTEXT_HOME + "/Graph.pdf"
+                plt.savefig(GEOTEXT_HOME + "/graph.pdf", format="pdf")
+                plt.close()
+            
+            print "the number of components is %d" %(len(list(nx.connected_components(mention_graph))))
+            
+            #degree
+            DRAW_DEGREE = False
+            if DRAW_DEGREE:
+                print "computing degrees of connectivity"
+                degrees = sorted(mention_graph.degree().values())
+                degree_counter = Counter(degrees)
+                labels, values = zip(*degree_counter.items())
+                indexes = np.arange(len(labels))
+                width = 1
+                plt.bar(indexes, values, width)
+                plt.xticks(indexes + width * 0.5, labels)
+                plt.savefig(GEOTEXT_HOME + '/degrees.pdf', format='pdf') 
+                plt.close()
+                    
+            #shortest paths
+            DRAW_SHORTEST_PATH = False
+            if DRAW_SHORTEST_PATH:
+                shortest_paths = nx.all_pairs_shortest_path_length(mention_graph, cutoff=None)
                     
   
     
 def prepare_adsorption_data():
+    global trainUsers
+    global testUsers
+    global trainText
+    global testText
     option = 4
     print "option: " + str(option) 
     if option == 4:
@@ -4041,10 +4318,7 @@ def prepare_adsorption_data():
                         outf.write(d_id + '\t' + str(w) + '\n')      
 
     elif option == 3:
-        global trainUsers
-        global testUsers
-        global trainText
-        global testText
+
         '''
         extract_mentions(k=0, addTest=True, addDev=False)
         sortedNodes = sorted(mentions)
@@ -4568,21 +4842,30 @@ def junto_postprocessing(multiple=False, dev=False, text_confidence=0.1):
     global U_dev
     global U_test
     text_errors = {}
+    text_preds = None
+    text_probs = None
     network_errors = {}
-    
+    nodes_degree = {}
+    degree_errors = defaultdict(list)
+    textlength_errors = defaultdict(list)
+    user_text_probs = {}
+    trainUsersLower = [u.lower() for u in sorted(trainUsers)]
     U_test = [u for u in sorted(testUsers)]
     U_dev = [u for u in sorted(devUsers)]
     result_dump_file = path.join(GEOTEXT_HOME, 'results-' + DATASETS[DATASET_NUMBER-1] + '-' + str(BUCKET_SIZE) + '.pkl')
-    print "reading (preds, devPreds, U_test, U_dev, testProbs, devProbs) from " + result_dump_file
-    with open(result_dump_file, 'rb') as inf:
-        preds_text, devPreds_text, U_test_text, U_dev_text, testProbs_text, devProbs_text = pickle.load(inf)
-    if dev:
-        text_preds = devPreds_text
-        text_probs = devProbs_text
-    else:
-        text_preds = preds_text
-        text_probs = testProbs_text
-
+    if text_confidence < 1:
+        print "reading (preds, devPreds, U_test, U_dev, testProbs, devProbs) from " + result_dump_file
+        with open(result_dump_file, 'rb') as inf:
+            preds_text, devPreds_text, U_test_text, U_dev_text, testProbs_text, devProbs_text = pickle.load(inf)
+            if dev:
+                text_preds = devPreds_text
+                text_probs = devProbs_text
+                U_eval = U_dev
+            else:
+                text_preds = preds_text
+                text_probs = testProbs_text
+                U_eval = U_test
+    
     # split a training set and a test set
     Y_test = np.asarray([testClasses[u] for u in U_test])
     Y_dev = np.asarray([devClasses[u] for u in U_dev])
@@ -4639,32 +4922,98 @@ def junto_postprocessing(multiple=False, dev=False, text_confidence=0.1):
                 print str(mean(distances))
                 print str(median(distances))
             else:
+                nopred = []
+                if text_confidence < 1:
+                    for u in usersLower:
+                        user_index = usersLower.index(u)
+                        text_predition = str(text_preds[user_index])
+                        test_index = user_index
+                        text_errors[u] = error(text_predition,U_eval[test_index] )
+                        text_probability = np.max(text_probs[user_index])
+                        user_text_probs[u] = text_probability
+                    errors_t=[text_errors[u] for u in usersLower]
+                    probs_t=[user_text_probs[u] for u in usersLower]
+                    plt.plot(errors_t, probs_t, '.', markersize=1)
+                    plt.xlabel('LR Error Distance in km')
+                    axes = plt.gca()
+                    axes.set_xlim([0,161])
+                    plt.ylabel('LR Prediction Confidence')
+                    plot_name = 'error_prob_text_161'
+                    plot_file = GEOTEXT_HOME + '/' + plot_name
+                    #scatter_histo(errors_t, probs_t, plot_file + '-diagrams.pdf')
+                    #hist2d(errors_t, probs_t, plot_file + '-diagrams.pdf')
+                    print "saving the plot in " + plot_file
+                    plt.title(DATASETS[DATASET_NUMBER-1])
+                    plt.savefig(plot_file + '.pdf', format='pdf')
+                    plt.close()
+                    plt.plot(probs_t, errors_t, '.', markersize=1)
+                    plt.ylabel('LR Error Distance in km')
+                    axes = plt.gca()
+                    axes.set_ylim([0,161])
+                    plt.xlabel('LR Prediction Confidence')
+                    plot_name = 'prob_error_text_161'
+                    plot_file = GEOTEXT_HOME + '/' + plot_name
+                    print "saving the plot in " + plot_file
+                    plt.title(DATASETS[DATASET_NUMBER-1])
+                    plt.savefig(plot_file + '.pdf', format='pdf')
+                    plt.close()
+                    
                 for line in inf:
                     fields = line.split('\t')
                     uid = fields[0]
                     if '.T' in uid:
                         continue
                     u = id_name[uid]
+                    test_user_inconsistency = 0
                     if u in usersLower:
                     # if fields[-2] == 'true':
-                        user_index = usersLower.index(u)
-                        text_predition = str(text_preds[user_index])
-                        text_errors[u] = error(text_predition,U_test[int(uid) - len(trainUsers)] )
-                        text_probability = np.max(text_probs[user_index])
+
+                        
                         label_scores = fields[-3]
                         label = fields[-3].split()[0]
                         labelProb = float16(fields[-3].split()[1])
                         #Tracer()()
-                        if label == '__DUMMY__' or labelProb < 0.01:
+                        if label == '__DUMMY__':
                             dummy_count += 1
-                            if text_probability > text_confidence:
-                                label = text_predition
-                            else:
-                                label = str(len(categories) / 2)
+                            label = str(len(categories) / 2)
                                 
                         id_pred[fields[0]] = label
-                        network_errors[u] = error(label,U_test[int(uid) - len(trainUsers)] )
-                Tracer()()
+                    else:
+                        if u not in trainUsersLower:
+                            nopred.append((uid, u))
+                print "no predition for these nodes:" + str(nopred)
+                print "no prediction for above nodes."
+                if text_confidence < 1:
+                    acc_network = [u for u in network_errors if network_errors[u] < 161]
+                    acc_text = [u for u in text_errors if text_errors[u] < 161]
+
+                    n1t1 = [u for u in acc_text if u in acc_network]
+                    n0t1 = [u for u in acc_text if u not in acc_network]
+                    n1t0 = [u for u in acc_network if u not in acc_text]
+                    n0t0 = [ u for u in usersLower if u not in acc_text if u not in acc_network]
+                    print 'n1t1 ' + str(len(n1t1))
+                    print 'n0t1 ' + str(len(n0t1))
+                    print 'n1t0 ' + str(len(n1t0))
+                    print 'n0t0 ' + str(len(n0t0)) 
+                print "the number of inconsistent test users is " + str(test_user_inconsistency)
+                
+                DRAW_TEXT_VS_NETWORK = False
+                if DRAW_TEXT_VS_NETWORK and text_confidence < 1:
+                    fig = plt.figure()
+                    ax = fig.add_subplot(111)
+                    #ax.set_xlim([0, 161])
+                    #ax.set_ylim([0, 161])
+                    #ax.set_xscale('log')
+                    #ax.set_yscale('log')
+                    plt.xlabel('text-based prediction error distance in KM')
+                    plt.ylabel('network-based prediction error distance in KM')
+                    text_errors2 = [text_errors[u] for u in network_errors]
+                    network_errors2 = [network_errors[u] for u in network_errors]
+                    m, b = np.polyfit(text_errors2, network_errors2, 1)
+                    plt.plot(text_errors2, [m * d + b for d in text_errors2], '-')
+                    plt.plot(text_errors2, network_errors2, '.',  markersize=1)
+                    print "text vs network diagram saved in " + GEOTEXT_HOME + '/text_vs_network.pdf'
+                    plt.savefig(GEOTEXT_HOME + '/text_vs_network.pdf')
                 # Tracer()()
                 preds = []
                 if dev:
@@ -4676,22 +5025,34 @@ def junto_postprocessing(multiple=False, dev=False, text_confidence=0.1):
                 doubles_found = 0
                 for u in Users:
                     if u.lower() not in name_id:
-                        u = u + '_double00'
+                        ud = u + '_double00'
                         doubles_found += 1
-                    uid = name_id[u.lower()]
+                        uid = name_id[ud.lower()]
+                    else:
+                        uid = name_id[u.lower()]
                     if uid in id_pred:
                         pred = id_pred[uid]
                         name_pred[u] = pred
                     else:
+                        #print 'user %d not in network predictions.'
                         user_not_in_network += 1
-                        if text_probability > text_confidence:
-                            pred = text_predition
-                            #pred = len(categories) / 2
-                        else:
-                            pred = len(categories) / 2
-                        
+                        pred = str(len(categories) / 2)  
                         name_pred[u] = pred
+
                     preds.append(int(pred))
+                    if text_confidence< 1:
+                        u_eval_id = int(uid) - len(trainUsers)
+                        if u_eval_id < len(usersLower) and u_eval_id > -1:
+                            network_errors[u.lower()] = error(pred,U_test[u_eval_id] )
+                            if mention_graph!=None:
+                                n_degree = mention_graph.degree(int(uid))
+                                nodes_degree[u.lower()] = n_degree
+                                degree_errors[n_degree].append(network_errors[u.lower()])
+                        
+                        else:
+                            print(Fore.RED + 'fatal error u_eval_id not in range')
+                            print(Fore.RESET)
+                #Tracer()()
                 print "doubles found is " + str(doubles_found)
                 print "users with dummy labels: " + str(dummy_count)
                 print "users not in network: " + str(user_not_in_network)
@@ -4699,6 +5060,95 @@ def junto_postprocessing(multiple=False, dev=False, text_confidence=0.1):
                 # print preds
                 # print [int(i) for i in Y_test.tolist()]    
                 loss(preds, Users)
+                DRAW_DEGREE_ERRORS = False
+                if DRAW_DEGREE_ERRORS:
+                    x = []
+                    y1 = []
+                    y2 = []
+                    degrees = sorted(degree_errors.keys())
+                    for degree in degrees:
+                        errors = degree_errors[degree]
+                        x.append(degree)
+                        y1.append(np.mean(errors))
+                        y2.append(len(errors))
+                    plt.plot(x,y1,'r-')
+                    plt.plot(x, y2, 'k-')
+                    plot_name = 'degree_error'
+                    plot_file = GEOTEXT_HOME + '/' + plot_name 
+                    #xs = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+                    #xs_labels = ['0.1', '0.2', '0.3', '0.4', '0.5', '0.6', '0.7', '0.8', '0.9', '1.0']
+                    #ax = plt.gca()
+                    #y1 = [25.0, 28.3, 30.7, 31.2, 33.1, 36.0, 37.6, 38.8, 38.9, 39.7]
+                    #y2 = [41.8, 45.41, 46.35, 47.72, 48.14, 48.33, 48.77, 49.25, 49.5, 49.6]
+                    #y3 = [46.48, 51.72, 54.09, 55.57, 56.5, 57.04, 57.65, 58.0, 58.2, 58.4]
+                    #y_labels = ['GEOTEXT', 'Twitter-US', 'Twitter-WORLD']
+                    #p1 = plt.plot(xs, y1, 'k--', label=y_labels[0])
+                    #p2 = plt.plot(xs, y2, 'r-', label=y_labels[1])
+                    #p3 = plt.plot(xs, y3, 'b-', label=y_labels[2])
+                    #plt.axis().xaxis.set_ticks(xs)
+                    #plt.legend((y_labels[0], y_labels[1], y_labels[1]), 'upper left', shadow=True)
+                    plt.xlabel('user degree in @-mention network')
+                    plt.ylabel('distance error in km')
+                    print "saving the plot in " + plot_file
+                    plt.title(DATASETS[DATASET_NUMBER-1])
+                    plt.savefig(plot_file + '.pdf', format='pdf')
+                    plt.close()
+                    plt.title(DATASETS[DATASET_NUMBER-1])
+                    plt.plot(x, y2, 'r-')
+                    plt.xlabel('user degree in @-mention network')
+                    plt.ylabel('#users')
+                    plt.savefig(plot_file + '_num_users.pdf', format='pdf')
+                    
+                DRAW_TEXTLENGTH_ERRORS = False
+                if DRAW_TEXTLENGTH_ERRORS:
+                    for u in Users:
+                        if dev:
+                            text = devText[u]
+                        else:
+                            text = testText[u]
+                            Tracer()()
+                        textlength_errors[len(text) / 100].append(text_errors[u.lower()])
+                    
+                    #Tracer()()
+                    x = []
+                    y1 = []
+                    y2 = []
+                    textlengths = sorted(textlength_errors.keys())
+                    for textlength in textlengths:
+                        errors = textlength_errors[textlength]
+                        x.append(textlength)
+                        y1.append(median(errors))
+                        y2.append(len(errors))
+                    plt.plot(x,y1,'r-', markersize=0.2)
+                    plt.plot(x, y2, 'k-', markersize=0.2)
+                    plot_name = 'textlength_error'
+                    plot_file = GEOTEXT_HOME + '/' + plot_name 
+                    #xs = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+                    #xs_labels = ['0.1', '0.2', '0.3', '0.4', '0.5', '0.6', '0.7', '0.8', '0.9', '1.0']
+                    #ax = plt.gca()
+                    #y1 = [25.0, 28.3, 30.7, 31.2, 33.1, 36.0, 37.6, 38.8, 38.9, 39.7]
+                    #y2 = [41.8, 45.41, 46.35, 47.72, 48.14, 48.33, 48.77, 49.25, 49.5, 49.6]
+                    #y3 = [46.48, 51.72, 54.09, 55.57, 56.5, 57.04, 57.65, 58.0, 58.2, 58.4]
+                    #y_labels = ['GEOTEXT', 'Twitter-US', 'Twitter-WORLD']
+                    #p1 = plt.plot(xs, y1, 'k--', label=y_labels[0])
+                    #p2 = plt.plot(xs, y2, 'r-', label=y_labels[1])
+                    #p3 = plt.plot(xs, y3, 'b-', label=y_labels[2])
+                    #plt.axis().xaxis.set_ticks(xs)
+                    #plt.legend((y_labels[0], y_labels[1], y_labels[1]), 'upper left', shadow=True)
+                    plt.xlabel('user text length in test set')
+                    plt.ylabel('median distance error in km')
+                    print "saving the plot in " + plot_file
+                    plt.title(DATASETS[DATASET_NUMBER-1])
+                    plt.savefig(plot_file + '.pdf', format='pdf')
+                    plt.close()
+                    plt.title(DATASETS[DATASET_NUMBER-1])
+                    plt.plot(x, y2, 'r-', markersize=0.2)
+                    plt.xlabel('user text length in test set')
+                    plt.ylabel('#users')
+                    plt.savefig(plot_file + '_num_users.pdf', format='pdf')
+                    
+                
+                    
 
         # Tracer()()
 def create_junto_config_files_for_tuning():
@@ -4726,15 +5176,166 @@ def create_junto_config_files_for_tuning():
 # chart_me()
 # sys.exit()
 # normalizeText()
-for BUCKET_SIZE in [10,20,50,100,200,300,600,1200,1800,2400,3000,3600]:
-    #downsize_train()
-    initialize(partitionMethod='median', granularity=BUCKET_SIZE, write=False, readText=True)
-    #partitionLocView(granularity=BUCKET_SIZE, partitionMethod='median')
-    #asclassification(granularity=BUCKET_SIZE, partitionMethod='median', use_mention_dictionary=False)
-    prepare_adsorption_data_collapsed(DEVELOPMENT=True, ADD_TEXT_LEARNER=False, CELEBRITY_THRESHOLD=10)
-    #direct_graph2()
-    #junto_postprocessing(multiple=False, dev=False, text_confidence=1.1)
+def analysis():
+    num_users = 429000
+    xs = [num_users/128, num_users/64, num_users/32, num_users/16, num_users/8, num_users/4, num_users/2, num_users]
+    xs_labels = ['3k','6k', '13k', '26k', '53k', '107k', '214k', '429k']
+    ax = plt.gca()
+    acc_text = [27.4, 33.2, 37.2, 40.78, 41.7, 45, 48.19, 50.3]
+    acc_network = [11.28, 14.2, 18.9, 25.2, 32.47, 40, 48.19, 53.9]
+    p1 = plt.plot(xs, acc_text, 'k--', label='LR')
+    p2 = plt.plot(xs, acc_network, 'r-', label='MADCEL')
+    #plt.axis().xaxis.set_ticks(xs)
+    plt.legend(('text', 'network'), 'upper left', shadow=True)
+    plt.xlabel('#users')
+    plt.ylabel('Acc@161')
+    ax.set_xticklabels(xs_labels)
+    #plt.title('The effect of training size on geolocation accuracy in text-based and nework-based models')
+    #axis([0,2,-1,1])
+    plt.show(block=True)
+    plt.savefig('a.pdf', format='pdf')
+
+def plot_numbers():
+    plot_name = 'downsample_text'
+    plot_file = GEOTEXT_HOME + '/' + plot_name + '.pdf'
+    xs = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    xs_labels = ['0.1', '0.2', '0.3', '0.4', '0.5', '0.6', '0.7', '0.8', '0.9', '1.0']
+    ax = plt.gca()
+    y1 = [25.0, 28.3, 30.7, 31.2, 33.1, 36.0, 37.6, 38.8, 38.9, 39.7]
+    y2 = [41.8, 45.41, 46.35, 47.72, 48.14, 48.33, 48.77, 49.25, 49.5, 49.6]
+    y3 = [46.48, 51.72, 54.09, 55.57, 56.5, 57.04, 57.65, 58.0, 58.2, 58.4]
+    y_labels = ['GEOTEXT', 'Twitter-US', 'Twitter-WORLD']
+    p1 = plt.plot(xs, y1, 'k--', label=y_labels[0])
+    p2 = plt.plot(xs, y2, 'r-', label=y_labels[1])
+    p3 = plt.plot(xs, y3, 'b-', label=y_labels[2])
+    #plt.axis().xaxis.set_ticks(xs)
+    plt.legend((y_labels[0], y_labels[1], y_labels[1]), 'upper left', shadow=True)
+    plt.xlabel('Text Downsample Rate')
+    plt.ylabel('Acc@161')
+    ax.set_xticklabels(xs_labels)
+    #plt.title('The effect of training size on geolocation accuracy in text-based and nework-based models')
+    #axis([0,2,-1,1])
+    #plt.show(block=True)
+    print "saving the plot in " + plot_file
+    plt.savefig(plot_file, format='pdf')
+
+#analysis()
+def cluster_train_points():
+    from sklearn.cluster import DBSCAN
+    
+    points = []
+    for user, location in trainUsers.iteritems():
+        lat, lon = locationStr2Float(location)
+        points.append([lat, lon])
+    X = np.array(points)
+    db = DBSCAN(eps=0.4, min_samples=50).fit(X)
+    core_samples_mask = np.zeros_like(db.labels_, dtype=bool)
+    core_samples_mask[db.core_sample_indices_] = True
+    labels = db.labels_
+    # Number of clusters in labels, ignoring noise if present.
+    n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
+    ##############################################################################
+    # Plot result
+    import matplotlib.pyplot as plt
+    
+    # Black removed and is used for noise instead.
+    unique_labels = set(labels)
+    colors = plt.cm.Spectral(np.linspace(0, 1, len(unique_labels)))
+    for k, col in zip(unique_labels, colors):
+        if k == -1:
+            # Black used for noise.
+            col = 'k'
+    
+        class_member_mask = (labels == k)
+    
+        xy = X[class_member_mask & core_samples_mask]
+        plt.plot(xy[:, 0], xy[:, 1], 'o', markerfacecolor=col,
+                 markeredgecolor='k', markersize=14)
+    
+        xy = X[class_member_mask & ~core_samples_mask]
+        plt.plot(xy[:, 0], xy[:, 1], 'o', markerfacecolor=col,
+                 markeredgecolor='k', markersize=1)
+    
+        plt.title('Estimated number of clusters: %d' % n_clusters_)
+        plt.savefig('clusters.pdf', format='pdf')
     #Tracer()()
+#plot_numbers()
+
+DATASET_NUMBER = 1
+TEXT_ONLY = False
+DATA_HOME = '/home/arahimi/datasets'
+DATASETS = ['cmu', 'na', 'world']
+ENCODINGS = ['latin1', 'utf-8', 'utf-8']
+buckets = [50 , 2400, 2400]
+reguls = [5e-5, 1e-6, 1e-7]
+BUCKET_SIZE = buckets[DATASET_NUMBER - 1]
+GEOTEXT_HOME = path.join(DATA_HOME, DATASETS[DATASET_NUMBER - 1])
+data_encoding = ENCODINGS[DATASET_NUMBER - 1]
+# GEOTEXT_HOME = '/home/arahimi/Roller Dataset NA'
+users_home = path.join(GEOTEXT_HOME, 'processed_data')
+testfile = path.join(users_home, 'user_info.test')
+devfile = path.join(users_home, 'user_info.dev')
+trainfile = path.join(users_home, 'user_info.train')
+
+print "dataset: " + DATASETS[DATASET_NUMBER - 1]
+lngs = []
+ltts = []
+pointText = {}
+keys = []
+userFirstTime = {}
+userLocation = {}
+locationUser = {}
+userlat = {}
+userlon = {}
+testUsers = {}
+trainUsers = {}
+devUsers = {}
+classLatMedian = {}
+classLonMedian = {}
+classLatMean = {}
+classLonMean = {}
+trainClasses = {}
+devClasses = {}
+testClasses = {}
+categories = []
+mentions = []
+testText = {}
+devText = {}
+trainText = {}
+user_multi_labels = {}
+
+costMatrix = None
+trainCostMatrix = None
+testCostMarix = None
+devCostMatrix = None
+
+X_train = None
+X_dev = None
+X_test = None
+Y_train = None
+Y_dev = None
+Y_test = None
+U_train = None
+U_dev = None
+U_test = None
+
+mention_graph = None
+methods = {'svd':TruncatedSVD, 'pca':PCA, 'factoranalysis':FactorAnalysis, 'median':None }
+methods  = ['svd', 'pca', 'factoranalysis', 'median']
+
+for partitionMethod in methods:
+    #for downsample in [1.0]:
+        #print(downsample)
+    #downsize_train()
+    initialize(partitionMethod=partitionMethod, granularity=BUCKET_SIZE, write=False, readText=True, downSampleTextCoefficient=1.0, reload_init=False)
+    #cluster_train_points()
+    partitionLocView(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, convexhull=True)
+    #asclassification(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, use_mention_dictionary=False)
+    #prepare_adsorption_data_collapsed(DEVELOPMENT=False, ADD_TEXT_LEARNER=True  , CELEBRITY_THRESHOLD=5, build_networkx_graph=False, DIRECT_GRAPH_WEIGHTED=True)
+    #direct_graph2()
+        #junto_postprocessing(multiple=False, dev=False, text_confidence=1.0)
+    #Tracer()()
+
 # direct_graph2()
 # ideal_network_errors()
 
