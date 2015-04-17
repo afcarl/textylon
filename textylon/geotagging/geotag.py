@@ -30,7 +30,7 @@ from datetime import datetime
 import sets
 from sklearn.metrics.pairwise import euclidean_distances, pairwise_distances
 from sklearn.preprocessing import normalize
-from sklearn.decomposition import PCA, TruncatedSVD, NMF, SparsePCA, KernelPCA, RandomizedPCA
+from sklearn.decomposition import *
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer, strip_accents_ascii, strip_accents_unicode
 from sklearn.feature_selection import SelectKBest, chi2
@@ -54,6 +54,7 @@ from sklearn.neighbors import NearestNeighbors
 from sklearn.feature_selection import SelectKBest
 #this is just for printing colored in shell, you don't want it you comment it and its init line
 from colorama import init, Fore, Back, Style
+import logging
 init()
 import group_lasso 
 # from extract import get_tokens
@@ -95,6 +96,7 @@ from math import radians, sin, cos, sqrt, asin
 import sys
 from scipy import mean
 __docformat__ = 'restructedtext en'
+logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.INFO)
 
 import cPickle
 import gzip
@@ -275,7 +277,15 @@ def plot_points():
 
             
 
-
+def get_cmap(N):
+    '''Returns a function that maps each index in 0, 1, ... N-1 to a distinct 
+    RGB color.'''
+    import matplotlib.cm as cmx
+    color_norm  = matplotlib.colors.Normalize(vmin=0, vmax=N-1)
+    scalar_map = cmx.ScalarMappable(norm=color_norm, cmap='hsv') 
+    def map_index_to_rgb_color(index):
+        return scalar_map.to_rgba(index)
+    return map_index_to_rgb_color
 
 def partitionLocView(granularity, partitionMethod, convexhull=False):
     fig = plt.figure() #figsize=(4,4.2)
@@ -286,6 +296,7 @@ def partitionLocView(granularity, partitionMethod, convexhull=False):
     ax.spines['right'].set_visible(False)
     ax.spines['bottom'].set_visible(False)
     ax.spines['left'].set_visible(False)
+    
     filename = users_home + '/' + str(granularity).strip() + '_' + partitionMethod + '_clustered.train'
     point_print_percent = 1.0
     print_lats = []
@@ -329,9 +340,11 @@ def partitionLocView(granularity, partitionMethod, convexhull=False):
             allpointsMaxLon.append(maxlon)
             allpointsMinLon.append(minlon)
             allpoints.append(points)
+    
             if convexhull:
                 point_arr = np.asarray(points)
                 points_np_arr.append(point_arr)
+    logging.info("The number of regions is %d" %(len(allpoints)))
     if not convexhull:
         x = []
         y = []
@@ -390,18 +403,22 @@ def partitionLocView(granularity, partitionMethod, convexhull=False):
     #plt.scatter(print_lons, print_lats, c=colors, marker='x', s=2)
     #convex hull plotting
     if convexhull:
-        
+        cs = get_cmap(len(points_np_arr)) 
         for i in range(len(points_np_arr)):
             points = points_np_arr[i]
+            #points = np.transpose(points)
+            
             #print points.shape
             if points.shape[0] < 3:
                 continue
             convex_hull = ConvexHull(points)
             #Tracer()()
-            #for simplex in convex_hull.simplices:
-                #plt.plot(points[simplex,0], points[simplex,1], 'k-')
-            patch = mpatches.Polygon(points[convex_hull.vertices])
-            ax.add_patch(patch)
+            for simplex in convex_hull.simplices:
+                plt.plot(points[simplex,1], points[simplex,0], color=cs(i))
+                
+                #Tracer()()
+            #patch = mpatches.Polygon(points[convex_hull.vertices])
+            #ax.add_patch(patch)
             
                 #plt.plot(points[:,0], points[:, 1])
     
@@ -1633,12 +1650,26 @@ def classificationBench(granularity, partitionMethod, use_mention_dictionary=Fal
         partitionLocView(granularity=granularity, partitionMethod=partitionMethod)
     return preds, probs, U_test, meanTest, medianTest, meanDev, medianDev
     '''
+def learn_a_dictionary(X, transformees):
+    #dic_learner = DictionaryLearning(n_components=100, alpha=1, max_iter=1000, tol=1e-8, fit_algorithm='lars', transform_algorithm='omp', transform_n_nonzero_coefs=None, transform_alpha=None, n_jobs=30, code_init=None, dict_init=None, verbose=True, split_sign=None, random_state=None)
+    dic_learner = MiniBatchDictionaryLearning(n_components=100, alpha=1, n_iter=500, fit_algorithm='lars', n_jobs=60, batch_size=3, shuffle=True, dict_init=None, transform_algorithm='omp', transform_n_nonzero_coefs=None, transform_alpha=None, verbose=False, split_sign=False, random_state=None)
+    if sparse.issparse(X):
+        X = X.toarray()
+    dic_learner.fit(X)
+    results = []
+    for feature_matrix in transformees:
+        feature_matrix = feature_matrix.toarray()
+        feature_matrix = dic_learner.transform(feature_matrix)
+        results.append(feature_matrix)
+    return results
 def asclassification(granularity, partitionMethod, use_mention_dictionary=False):
 
 
     stops = 'english'
     # partitionLocView(granularity=granularity, partitionMethod=partitionMethod)
     X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor2(norm='l2', use_mention_dictionary=use_mention_dictionary, min_df=10, max_df=0.2, stop_words=stops)    
+    X_train, X_dev, X_test = learn_a_dictionary(X_train, transformees=[X_train, X_dev, X_test])
+    
     for regul in [reguls[DATASET_NUMBER-1]]:
         preds, probs, U_test, meanTest, medianTest, meanDev, medianDev = classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity, regul=regul)
     return preds, probs, U_test, meanTest, medianTest, meanDev, medianDev
@@ -5261,12 +5292,12 @@ def cluster_train_points():
     #Tracer()()
 #plot_numbers()
 
-DATASET_NUMBER = 1
+DATASET_NUMBER = 2
 TEXT_ONLY = False
 DATA_HOME = '/home/arahimi/datasets'
 DATASETS = ['cmu', 'na', 'world']
 ENCODINGS = ['latin1', 'utf-8', 'utf-8']
-buckets = [50 , 2400, 2400]
+buckets = [300 , 2400, 2400]
 reguls = [5e-5, 1e-6, 1e-7]
 BUCKET_SIZE = buckets[DATASET_NUMBER - 1]
 GEOTEXT_HOME = path.join(DATA_HOME, DATASETS[DATASET_NUMBER - 1])
@@ -5321,13 +5352,14 @@ U_test = None
 
 mention_graph = None
 methods = {'svd':TruncatedSVD, 'pca':PCA, 'factoranalysis':FactorAnalysis, 'median':None }
-methods  = ['svd', 'pca', 'factoranalysis', 'median']
+#methods  = ['svd', 'pca', 'factoranalysis', 'median']
 
-for partitionMethod in methods:
+for partitionMethod in ['svd', 'pca', 'factoranalysis']:
     #for downsample in [1.0]:
         #print(downsample)
     #downsize_train()
-    initialize(partitionMethod=partitionMethod, granularity=BUCKET_SIZE, write=False, readText=True, downSampleTextCoefficient=1.0, reload_init=False)
+    initialize(partitionMethod=partitionMethod, granularity=BUCKET_SIZE, write=False, readText=False, downSampleTextCoefficient=1.0, reload_init=False)
+    
     #cluster_train_points()
     partitionLocView(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, convexhull=True)
     #asclassification(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, use_mention_dictionary=False)
