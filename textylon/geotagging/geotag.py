@@ -902,182 +902,62 @@ def ppmiTransform(matrix):
         else:
             matrix[row, col] = 0.0
     print "PPMI transform finished successfully."    
-def feature_extractor(use_mention_dictionary=False, use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=1, max_df=1.0, BuildCostMatrices=False, vectorizer=None):
-    '''
-    read train, dev and test directories and extract textual features using tfidfvectorizer.
-    '''
-    global categories
-    global X_train
-    global X_dev
-    global X_test
-    global Y_train
-    global Y_dev
-    global Y_test
-    global U_train
-    global U_dev
-    global U_test
-    
+
+
+def build_cost_matrices():
     global costMatrix
     global trainCostMatrix
     global testCostMatrix
     global devCostMatrix
+    global classLatMedian
+    global categories
+    global trainClasses
+    global X_train
+    print "building cost matrix..."
+    costMatrix = np.ndarray(shape=(len(classLatMedian), len(classLatMedian)), dtype=float)
+    costs = []
+    for i in range(0, len(categories)):
+        lat = classLatMedian[str(i)]
+        lon = classLonMedian[str(categories[i])]
+        for j in classLatMedian:
+            lat2 = classLatMedian[j]
+            lon2 = classLonMedian[j]
+            cost = distance(lat, lon, lat2, lon2)
+            costMatrix[i, j] = cost
+            if cost < 161:
+                costs.append((i, j, 1))
+            else:
+                costs.append((i, j, 0))
+    with codecs.open(path.join(GEOTEXT_HOME,'label_graph'), 'w', encoding='utf-8') as inf:
+        for rec in costs:
+            i, j, cost = rec
+            inf.write(str(i) + '\t' + str(j) + '\t' + str(cost) + '\n')
+    print "building sample based cost matrix..."
+    trainCostMatrix = np.ndarray(shape=(X_train.shape[0], len(categories)), dtype=float)
     
-    trainDir = path.join(GEOTEXT_HOME, 'processed_data/train')
-    testDir = path.join(GEOTEXT_HOME, 'processed_data/test')
-    devDir = path.join(GEOTEXT_HOME, 'processed_data/dev')
-    print "loading train, dev and test files..."
-    data_train = load_files(trainDir, encoding=data_encoding)
-    target = data_train.target
-    data_test = load_files(testDir, encoding=data_encoding)
-    data_dev = load_files(devDir, encoding=data_encoding)
-    
-    categories = data_train.target_names
-    
-    U_train = [path.basename(data_train.filenames[i]).decode(encoding=data_encoding) for i in range(0, len(data_train.filenames))]
-    U_test = [path.basename(data_test.filenames[i]).decode(encoding=data_encoding) for i in range(0, len(data_test.filenames))]
-    U_dev = [path.basename(data_dev.filenames[i]).decode(encoding=data_encoding) for i in range(0, len(data_dev.filenames))]
+    for i in range(0, trainCostMatrix.shape[0]):
+        lat, lon = locationStr2Float(trainUsers[U_train[i]])
+        for j in range(0, trainCostMatrix.shape[1]):
+            lat2 = classLatMedian[str(j)]
+            lon2 = classLonMedian[str(j)]
+            trainCostMatrix[i, j] = distance(lat, lon, lat2, lon2)
 
-    def size_mb(docs):
-        return sum(len(s.encode(encoding=data_encoding)) for s in docs) / 1e6
     
-    data_train_size_mb = size_mb(data_train.data)
-    data_test_size_mb = size_mb(data_test.data)
-    data_dev_size_mb = size_mb(data_dev.data)
+    devCostMatrix = np.ndarray(shape=(X_dev.shape[0], len(categories)), dtype=float)
+    for i in range(0, devCostMatrix.shape[0]):
+        lat, lon = locationStr2Float(devUsers[U_dev[i]])
+        for j in range(0, devCostMatrix.shape[1]):
+            lat2 = classLatMedian[str(j)]
+            lon2 = classLonMedian[str(j)]
+            devCostMatrix[i, j] = distance(lat, lon, lat2, lon2)        
     
-    print("%d documents - %0.3fMB (training set)" % (
-        len(data_train.data), data_train_size_mb))
-    print("%d documents - %0.3fMB (test set)" % (
-        len(data_test.data), data_test_size_mb))
-    print("%d documents - %0.3fMB (dev set)" % (
-        len(data_dev.data), data_dev_size_mb))
-
-    print("%d categories" % len(categories))
-    print()
-    
-    # split a training set and a test set
-    Y_train = data_train.target
-    Y_test = data_test.target
-    Y_dev = data_dev.target
-    
-   
-    print("Extracting features from the training dataset using a sparse vectorizer")
-    t0 = time.time()
-    
-    if vectorizer == None:    
-        if use_mention_dictionary:
-            print "using @ mention dictionary as vocab..."
-            extract_mentions()
-            vectorizer = TfidfVectorizer(use_idf=use_idf, norm=norm, binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=max_df, ngram_range=(1, 1), stop_words=None, vocabulary=mentions)
-        else:
-            print "mindf: " + str(min_df) + " maxdf: " + str(max_df)
-            vectorizer = TfidfVectorizer(use_idf=use_idf, norm=norm, binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=max_df, ngram_range=(1, 1), stop_words='english')
-    X_train = vectorizer.fit_transform(data_train.data)
-    # keys = vectorizer.vocabulary_.keys()
-
-        
-    '''
-    #test the sum of a doc feature values
-    test = X_train[0].todense()
-    print test.shape
-    nn = test.shape[0]
-    vv = test.shape[1]
-    print nn
-    print vv
-    summm = 0
-    for l in range(0, vv):
-         summm += test[0, l]
-    print summm
-    '''
-    duration = time.time() - t0
-    print("done in %fs at %0.3fMB/s" % (duration, data_train_size_mb / duration))
-    print("n_samples: %d, n_features: %d" % X_train.shape)
-    print()
-    
-    print("Extracting features from the dev dataset using the same vectorizer")
-    t0 = time.time()
-    X_dev = vectorizer.transform(data_dev.data)
-    duration = time.time() - t0
-    print("done in %fs at %0.3fMB/s" % (duration, data_dev_size_mb / duration))
-    print("n_samples: %d, n_features: %d" % X_dev.shape)
-    print()
-
-    print("Extracting features from the test dataset using the same vectorizer")
-    t0 = time.time()
-    X_test = vectorizer.transform(data_test.data)
-    duration = time.time() - t0
-    print("done in %fs at %0.3fMB/s" % (duration, data_test_size_mb / duration))
-    print("n_samples: %d, n_features: %d" % X_test.shape)
-    print()
-    ppmitransform = False
-    if ppmitransform:
-        ppmiTransform(X_train)
-        ppmiTransform(X_dev)
-        ppmiTransform(X_test)
-    
-            
-    chi = False
-    if chi:
-        k = 200000
-        print("Extracting %d best features by a chi-squared test" % k)
-        t0 = time.time()
-        ch2 = SelectKBest(chi2, k=k)
-        X_train = ch2.fit_transform(X_train, Y_train)
-        X_test = ch2.transform(X_test)
-        X_dev = ch2.transform(X_dev)
-        print("done in %fs" % (time.time() - t0))
-        print()
-        feature_names = np.asarray(vectorizer.get_feature_names())
-    else:
-        feature_names = np.asarray(vectorizer.get_feature_names())
-
-    DO_SVD = False
-    Reduction_D = 1000
-    if DO_SVD:
-        print("dimension reduction svd with d=%d" % Reduction_D)
-        svd = TruncatedSVD(n_components=Reduction_D, algorithm="randomized", n_iter=5, random_state=None, tol=0)
-        X_train = svd.fit_transform(X_train)
-        X_test = svd.transform(X_test)
-        X_dev = svd.transform(X_dev)
-        print("dimension reduction finished.")
-        
-    if BuildCostMatrices:
-        print "building cost matrix..."
-        costMatrix = np.ndarray(shape=(len(classLatMedian), len(classLatMedian)), dtype=float)
-        for i in range(0, len(categories)):
-            lat = classLatMedian[str(i)]
-            lon = classLonMedian[str(categories[i])]
-            for j in classLatMedian:
-                lat2 = classLatMedian[j]
-                lon2 = classLonMedian[j]
-                cost = distance(lat, lon, lat2, lon2)
-                costMatrix[i, j] = cost
-        
-        print "building sample based cost matrix..."
-        trainCostMatrix = np.ndarray(shape=(X_train.shape[0], len(categories)), dtype=float)
-        for i in range(0, trainCostMatrix.shape[0]):
-            lat, lon = locationStr2Float(trainUsers[U_train[i]])
-            for j in range(0, trainCostMatrix.shape[1]):
-                lat2 = classLatMedian[str(j)]
-                lon2 = classLonMedian[str(j)]
-                trainCostMatrix[i, j] = distance(lat, lon, lat2, lon2)
-        
-        devCostMatrix = np.ndarray(shape=(X_dev.shape[0], len(categories)), dtype=float)
-        for i in range(0, devCostMatrix.shape[0]):
-            lat, lon = locationStr2Float(devUsers[U_dev[i]])
-            for j in range(0, devCostMatrix.shape[1]):
-                lat2 = classLatMedian[str(j)]
-                lon2 = classLonMedian[str(j)]
-                devCostMatrix[i, j] = distance(lat, lon, lat2, lon2)        
-        
-        testCostMatrix = np.ndarray(shape=(X_test.shape[0], len(categories)), dtype=float)
-        for i in range(0, testCostMatrix.shape[0]):
-            lat, lon = locationStr2Float(testUsers[U_test[i]])
-            for j in range(0, testCostMatrix.shape[1]):
-                lat2 = classLatMedian[str(j)]
-                lon2 = classLonMedian[str(j)]
-                testCostMatrix[i, j] = distance(lat, lon, lat2, lon2)  
-            
-    return X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names
+    testCostMatrix = np.ndarray(shape=(X_test.shape[0], len(categories)), dtype=float)
+    for i in range(0, testCostMatrix.shape[0]):
+        lat, lon = locationStr2Float(testUsers[U_test[i]])
+        for j in range(0, testCostMatrix.shape[1]):
+            lat2 = classLatMedian[str(j)]
+            lon2 = classLonMedian[str(j)]
+            testCostMatrix[i, j] = distance(lat, lon, lat2, lon2)  
 
 def feature_extractor2(use_mention_dictionary=False, use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=1, max_df=1.0, BuildCostMatrices=False, vectorizer=None, stop_words=None, novectorization=False):
     '''
@@ -1093,13 +973,7 @@ def feature_extractor2(use_mention_dictionary=False, use_idf=True, norm='l2', bi
     global U_dev
     global U_test
     
-    global costMatrix
-    global trainCostMatrix
-    global testCostMatrix
-    global devCostMatrix
-    
 
-    
     
     U_train = [u for u in sorted(trainUsers)]
     U_test = [u for u in sorted(testUsers)]
@@ -1200,41 +1074,7 @@ def feature_extractor2(use_mention_dictionary=False, use_idf=True, norm='l2', bi
         print("dimension reduction finished.")
         
     if BuildCostMatrices:
-        print "building cost matrix..."
-        costMatrix = np.ndarray(shape=(len(classLatMedian), len(classLatMedian)), dtype=float)
-        for i in range(0, len(categories)):
-            lat = classLatMedian[str(i)]
-            lon = classLonMedian[str(categories[i])]
-            for j in classLatMedian:
-                lat2 = classLatMedian[j]
-                lon2 = classLonMedian[j]
-                cost = distance(lat, lon, lat2, lon2)
-                costMatrix[i, j] = cost
-        
-        print "building sample based cost matrix..."
-        trainCostMatrix = np.ndarray(shape=(X_train.shape[0], len(categories)), dtype=float)
-        for i in range(0, trainCostMatrix.shape[0]):
-            lat, lon = locationStr2Float(trainUsers[U_train[i]])
-            for j in range(0, trainCostMatrix.shape[1]):
-                lat2 = classLatMedian[str(j)]
-                lon2 = classLonMedian[str(j)]
-                trainCostMatrix[i, j] = distance(lat, lon, lat2, lon2)
-        
-        devCostMatrix = np.ndarray(shape=(X_dev.shape[0], len(categories)), dtype=float)
-        for i in range(0, devCostMatrix.shape[0]):
-            lat, lon = locationStr2Float(devUsers[U_dev[i]])
-            for j in range(0, devCostMatrix.shape[1]):
-                lat2 = classLatMedian[str(j)]
-                lon2 = classLonMedian[str(j)]
-                devCostMatrix[i, j] = distance(lat, lon, lat2, lon2)        
-        
-        testCostMatrix = np.ndarray(shape=(X_test.shape[0], len(categories)), dtype=float)
-        for i in range(0, testCostMatrix.shape[0]):
-            lat, lon = locationStr2Float(testUsers[U_test[i]])
-            for j in range(0, testCostMatrix.shape[1]):
-                lat2 = classLatMedian[str(j)]
-                lon2 = classLonMedian[str(j)]
-                testCostMatrix[i, j] = distance(lat, lon, lat2, lon2)  
+        build_cost_matrices()
             
     return X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names
 def abod(probs, preds, U_test):
@@ -4591,22 +4431,31 @@ def direct_graph2(weighted=True, PRIOR=False, normalize_edge=False):
     trainLats = []
     trainLons = []
     node_location = {}
-    
+    dongle_nodes = []
     if PRIOR:
+        dongle = True
+
         print "reading prior text-based locations"
         prior_file_path =  path.join(GEOTEXT_HOME, 'results-' + DATASETS[DATASET_NUMBER-1] + '-' + partitionMethod + '-'+ str(BUCKET_SIZE) +  '.pkl')
         if os.path.exists(prior_file_path):
             with open(prior_file_path, 'rb') as inf:
                 preds, devPreds, U_test, U_dev, testProbs, devProbs = pickle.load(inf)
+                if dongle:
+                    mention_graph.add_nodes_from([u + '.dongle' for u in U_test])
                 for user, pred in zip(U_test, preds):
                     lat = classLatMedian[str(pred)]
                     lon = classLonMedian[str(pred)]
-                    node_location[user] = (lat, lon)
+                    if dongle:
+                        dongle_node = user +'.dongle'
+                        mention_graph.add_edge(dongle_node, user, weight=1)
+                        node_location[dongle_node] = (lat, lon)
+                        dongle_nodes.append(dongle_node)
+                    else:
+                        node_location[user] = (lat, lon)
 
         else:
             print "prior file not found."
     for user, loc in trainUsers.iteritems():
-        mention_graph
         lat, lon = locationStr2Float(loc)
         trainLats.append(lat)
         trainLons.append(lon)
@@ -4624,6 +4473,18 @@ def direct_graph2(weighted=True, PRIOR=False, normalize_edge=False):
     medianLon = np.median(trainLons)
     
     #remove celebrities from the graph
+    
+    remove_betweeners = False
+    if remove_betweeners:
+        print("computing betweenness centrality of all nodes, takes a long time, sorry!")
+        scores = nx.betweenness_centrality(mention_graph,weight='weight')
+        i = 0
+        percent_5 = len(scores) / 20 
+        for w in sorted(scores, key=scores.get, reverse=True):
+            i += 1
+            if i < percent_5:
+                mention_graph.remove_node(w)
+    
     remove_celebrities = True
     celebrity_threshold = 5
     celebrities = []
@@ -4633,13 +4494,13 @@ def direct_graph2(weighted=True, PRIOR=False, normalize_edge=False):
             nbrs = mention_graph.neighbors(node)
             if len(nbrs) > celebrity_threshold:
                 celebrities.append(node)
-        print("found %d celebrities" %(len(celebrities)))
+        print("found %d celebrities with celebrity threshold %d" %(len(celebrities), celebrity_threshold))
         for celebrity in celebrities:
             if celebrity not in testUsersLower and celebrity not in trainUsersLower:
                 mention_graph.remove_node(celebrity)
         
     print "finding unlocated nodes"
-    nodes_unknown = [node for node in mention_graph.nodes() if node not in trainUsersLower]
+    nodes_unknown = [node for node in mention_graph.nodes() if node not in trainUsersLower and node not in dongle_nodes]
   
 
     converged = False
@@ -5330,7 +5191,81 @@ def location2dictionary():
     plt.savefig('a.pdf', format='pdf')
     Tracer()()
        
+def kernel_density():
+    from sklearn.datasets import fetch_species_distributions
+    from sklearn.datasets.species_distributions import construct_grids
+    from sklearn.neighbors import KernelDensity
+    
+    # if basemap is available, we'll use it.
+    # otherwise, we'll improvise later...
+    try:
+        from mpl_toolkits.basemap import Basemap
+        basemap = True
+    except ImportError:
+        basemap = False
+    
+    # Get matrices/arrays of species IDs and locations
+    data = fetch_species_distributions()
+    species_names = ['Bradypus Variegatus', 'Microryzomys Minutus']
+    
+    Xtrain = np.vstack([data['train']['dd lat'],
+                        data['train']['dd long']]).T
+    ytrain = np.array([d.decode('ascii').startswith('micro')
+                      for d in data['train']['species']], dtype='int')
+    Xtrain *= np.pi / 180.  # Convert lat/long to radians
+    
+    # Set up the data grid for the contour plot
+    xgrid, ygrid = construct_grids(data)
+    Tracer()()
+    X, Y = np.meshgrid(xgrid[::5], ygrid[::5][::-1])
+    land_reference = data.coverages[6][::5, ::5]
+    land_mask = (land_reference > -9999).ravel()
+    
+    xy = np.vstack([Y.ravel(), X.ravel()]).T
+    xy = xy[land_mask]
+    xy *= np.pi / 180.
+    
+    # Plot map of South America with distributions of each species
+    fig = plt.figure()
+    fig.subplots_adjust(left=0.05, right=0.95, wspace=0.05)
+    
+    for i in range(2):
+        plt.subplot(1, 2, i + 1)
+    
+        # construct a kernel density estimate of the distribution
+        print(" - computing KDE in spherical coordinates")
+        kde = KernelDensity(bandwidth=0.04, metric='haversine',
+                            kernel='gaussian', algorithm='ball_tree')
+        kde.fit(Xtrain[ytrain == i])
+    
+        # evaluate only on the land: -9999 indicates ocean
+        Z = -9999 + np.zeros(land_mask.shape[0])
+        Z[land_mask] = np.exp(kde.score_samples(xy))
+        Z = Z.reshape(X.shape)
+    
+        # plot contours of the density
+        levels = np.linspace(0, Z.max(), 25)
+        plt.contourf(X, Y, Z, levels=levels, cmap=plt.cm.Reds)
         
+        if basemap:
+            print(" - plot coastlines using basemap")
+            m = Basemap(projection='cyl', llcrnrlat=Y.min(),
+                        urcrnrlat=Y.max(), llcrnrlon=X.min(),
+                        urcrnrlon=X.max(), resolution='c')
+            m.drawcoastlines()
+            m.drawcountries()
+        else:
+            print(" - plot coastlines from coverage")
+            plt.contour(X, Y, land_reference,
+                        levels=[-9999], colors="k",
+                        linestyles="solid")
+            plt.xticks([])
+            plt.yticks([])
+    
+        plt.title(species_names[i])
+    
+    plt.show()
+       
             
            
 DATASET_NUMBER = 1
@@ -5338,7 +5273,7 @@ TEXT_ONLY = False
 DATA_HOME = '/home/arahimi/datasets'
 DATASETS = ['cmu', 'na', 'world']
 ENCODINGS = ['latin1', 'utf-8', 'utf-8']
-buckets = [300 , 2400, 2400]
+buckets = [50 , 2400, 2400]
 reguls = [4e-5, 1e-6, 1e-7]
 BUCKET_SIZE = buckets[DATASET_NUMBER - 1]
 GEOTEXT_HOME = path.join(DATA_HOME, DATASETS[DATASET_NUMBER - 1])
@@ -5407,23 +5342,23 @@ initialize(partitionMethod=partitionMethod, granularity=BUCKET_SIZE, write=False
 
 
 
-
+#build_cost_matrices()
 #location2dictionary()
-direct_graph2(weighted=True, PRIOR=False)
+#direct_graph2(weighted=True, PRIOR=False)
 #direct_graph2_nonetworkx()
 #Tracer()()
 #heatmap('upstate', no_bin=True , bin_thresh=5000, add_noise = False)
 #Tracer()()
 #cluster_train_points()
 #partitionLocView(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, convexhull=True)
-#asclassification(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, use_mention_dictionary=False)
+asclassification(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, use_mention_dictionary=False)
 #CELEBRITY_THRESHOLD = 15
 #print 'CELEBRITY_THRESHOLD: ' + str(CELEBRITY_THRESHOLD)
 #prepare_adsorption_data_collapsed(DEVELOPMENT=False, ADD_TEXT_LEARNER=False  , CELEBRITY_THRESHOLD=5, build_networkx_graph=T, DIRECT_GRAPH_WEIGHTED=True, partitionMethod=partitionMethod)
 #build_graph(DEVELOPMENT=False, ADD_TEXT_LEARNER=False  , CELEBRITY_THRESHOLD=5, build_networkx_graph=True, DIRECT_GRAPH_WEIGHTED=False, partitionMethod=partitionMethod)
 #Tracer()()
 #direct_graph2()
-#junto_postprocessing(multiple=False, dev=False, text_confidence=1.0, method=partitionMethod, celeb_threshold=15, weighted=True, text_prior=False)
+#junto_postprocessing(multiple=False, dev=False, text_confidence=1.0, method=partitionMethod, celeb_threshold=5, weighted=True, text_prior=False)
 #Tracer()()
 
 # direct_graph2()
