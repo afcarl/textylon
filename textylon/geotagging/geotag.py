@@ -4353,7 +4353,7 @@ def ideal_network_errors():
     prior_file_path = path.join(GEOTEXT_HOME, 'preds.pkl')
 
                 
-def direct_graph2(weighted=True, PRIOR=False, normalize_edge=False):
+def LP(weighted=True, PRIOR=False, normalize_edge=False):
     global trainUsers
     global testUsers
     global trainText
@@ -5268,7 +5268,7 @@ def kernel_density():
        
             
            
-DATASET_NUMBER = 1
+DATASET_NUMBER = 3
 TEXT_ONLY = False
 DATA_HOME = '/home/arahimi/datasets'
 DATASETS = ['cmu', 'na', 'world']
@@ -5337,14 +5337,14 @@ partitionMethod = 'median'
 #for downsample in [1.0]:
     #print(downsample)
 #downsize_train()
-initialize(partitionMethod=partitionMethod, granularity=BUCKET_SIZE, write=False, readText=True, downSampleTextCoefficient=1.0, reload_init=False)
+initialize(partitionMethod=partitionMethod, granularity=BUCKET_SIZE, write=False, readText=False, downSampleTextCoefficient=1.0, reload_init=True)
 #spams_group_lasso()
 
 
 
 #build_cost_matrices()
 #location2dictionary()
-#direct_graph2(weighted=True, PRIOR=False)
+#LP(weighted=True, PRIOR=False)
 #direct_graph2_nonetworkx()
 #Tracer()()
 #heatmap('upstate', no_bin=True , bin_thresh=5000, add_noise = False)
