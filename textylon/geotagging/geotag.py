@@ -5268,7 +5268,7 @@ def kernel_density():
        
             
            
-DATASET_NUMBER = 3
+DATASET_NUMBER = 1
 TEXT_ONLY = False
 DATA_HOME = '/home/arahimi/datasets'
 DATASETS = ['cmu', 'na', 'world']
@@ -5337,21 +5337,21 @@ partitionMethod = 'median'
 #for downsample in [1.0]:
     #print(downsample)
 #downsize_train()
-initialize(partitionMethod=partitionMethod, granularity=BUCKET_SIZE, write=False, readText=False, downSampleTextCoefficient=1.0, reload_init=True)
+initialize(partitionMethod=partitionMethod, granularity=BUCKET_SIZE, write=False, readText=True, downSampleTextCoefficient=1.0, reload_init=False)
 #spams_group_lasso()
 
 
 
 #build_cost_matrices()
 #location2dictionary()
-#LP(weighted=True, PRIOR=False)
+LP(weighted=True, PRIOR=False)
 #direct_graph2_nonetworkx()
 #Tracer()()
 #heatmap('upstate', no_bin=True , bin_thresh=5000, add_noise = False)
 #Tracer()()
 #cluster_train_points()
 #partitionLocView(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, convexhull=True)
-asclassification(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, use_mention_dictionary=False)
+#asclassification(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, use_mention_dictionary=False)
 #CELEBRITY_THRESHOLD = 15
 #print 'CELEBRITY_THRESHOLD: ' + str(CELEBRITY_THRESHOLD)
 #prepare_adsorption_data_collapsed(DEVELOPMENT=False, ADD_TEXT_LEARNER=False  , CELEBRITY_THRESHOLD=5, build_networkx_graph=T, DIRECT_GRAPH_WEIGHTED=True, partitionMethod=partitionMethod)
