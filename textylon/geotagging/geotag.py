@@ -817,7 +817,7 @@ def loss(preds, U_test, loss='median', save=False):
         distances_from_center.append(distance(lat, lon, center_of_us[0], center_of_us[1]))
         distances_from_nyc.append(distance(lat, lon, nyc[0], nyc[1]))
         distances_from_la.append(distance(lat, lon, la[0], la[1]))
-        if preds[i] == int(Y_test[i]):
+        if preds[i] == int(testClasses[user]):
             acc += 1
         # print str(Y_test[i]) + " " + str(preds[i])
         prediction = categories[preds[i]]
@@ -4440,6 +4440,8 @@ def LP(weighted=True, PRIOR=False, normalize_edge=False):
         if os.path.exists(prior_file_path):
             with open(prior_file_path, 'rb') as inf:
                 preds, devPreds, U_test, U_dev, testProbs, devProbs = pickle.load(inf)
+                Tracer()()
+                loss(preds=preds, U_test=U_test)
                 if dongle:
                     mention_graph.add_nodes_from([u + '.dongle' for u in U_test])
                 for user, pred in zip(U_test, preds):
@@ -4486,7 +4488,7 @@ def LP(weighted=True, PRIOR=False, normalize_edge=False):
                 mention_graph.remove_node(w)
     
     remove_celebrities = True
-    celebrity_threshold = 5
+    celebrity_threshold = celeb_threshold
     celebrities = []
     if remove_celebrities:
         nodes = mention_graph.nodes_iter()
@@ -4511,6 +4513,8 @@ def LP(weighted=True, PRIOR=False, normalize_edge=False):
     
     previous_median = 10000
     previous_mean = 10000
+    #if selfish = True, the nodes location would be added to that of its neighbours and then the median is computed. (it didn't improve the results on cmu)
+    selfish = False
     while not converged:
         isolated_users = set()
         print "iter: " + str(iter_num)
@@ -4520,6 +4524,12 @@ def LP(weighted=True, PRIOR=False, normalize_edge=False):
             nbrs = mention_graph[node]
             nbrlats = []
             nbrlons = []
+            if selfish:
+                if node in node_location:
+                    self_lat, self_lon = node_location[node]
+                    nbrlats.append(self_lat)
+                    nbrlons.append(self_lon)
+                
             for nbr in nbrs:
                 if nbr in node_location:
                     lat, lon = node_location[nbr]
@@ -4529,6 +4539,7 @@ def LP(weighted=True, PRIOR=False, normalize_edge=False):
                     for i in range(0, edge_weight):
                         nbrlats.append(lat)
                         nbrlons.append(lon)
+                    
             if len(nbrlons) > 0:
                 node_location[node] = (np.median(nbrlats), np.median(nbrlons))
         iter_num += 1
@@ -5273,9 +5284,11 @@ TEXT_ONLY = False
 DATA_HOME = '/home/arahimi/datasets'
 DATASETS = ['cmu', 'na', 'world']
 ENCODINGS = ['latin1', 'utf-8', 'utf-8']
-buckets = [50 , 2400, 2400]
+buckets = [300 , 2400, 2400]
 reguls = [4e-5, 1e-6, 1e-7]
+celeb_thresholds = [5 , 15, 15]
 BUCKET_SIZE = buckets[DATASET_NUMBER - 1]
+celeb_threshold = celeb_thresholds[DATASET_NUMBER - 1]
 GEOTEXT_HOME = path.join(DATA_HOME, DATASETS[DATASET_NUMBER - 1])
 data_encoding = ENCODINGS[DATASET_NUMBER - 1]
 # GEOTEXT_HOME = '/home/arahimi/Roller Dataset NA'
@@ -5344,14 +5357,14 @@ initialize(partitionMethod=partitionMethod, granularity=BUCKET_SIZE, write=False
 
 #build_cost_matrices()
 #location2dictionary()
-LP(weighted=True, PRIOR=False)
+#LP(weighted=True, PRIOR=False)
 #direct_graph2_nonetworkx()
 #Tracer()()
 #heatmap('upstate', no_bin=True , bin_thresh=5000, add_noise = False)
 #Tracer()()
 #cluster_train_points()
 #partitionLocView(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, convexhull=True)
-#asclassification(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, use_mention_dictionary=False)
+asclassification(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, use_mention_dictionary=False)
 #CELEBRITY_THRESHOLD = 15
 #print 'CELEBRITY_THRESHOLD: ' + str(CELEBRITY_THRESHOLD)
 #prepare_adsorption_data_collapsed(DEVELOPMENT=False, ADD_TEXT_LEARNER=False  , CELEBRITY_THRESHOLD=5, build_networkx_graph=T, DIRECT_GRAPH_WEIGHTED=True, partitionMethod=partitionMethod)
